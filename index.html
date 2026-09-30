@@ -2,7 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>MASAO KART - GOTANDA GRAND PRIX</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,7 +13,70 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff;
     font-family: 'M PLUS Rounded 1c', sans-serif; user-select: none; }
-  canvas#view { display: block; }
+  canvas#view { display: block; touch-action: none; }
+  html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  /* ===== スマホの操作ボタン ===== */
+  #touchPad { position: fixed; inset: 0; pointer-events: none; z-index: 7; }
+  #touchPad .tb { pointer-events: auto; position: absolute; border-radius: 50%; border: 3px solid rgba(255,255,255,.9);
+    background: rgba(0,0,0,.38); color: #fff; font: 900 17px 'M PLUS Rounded 1c', sans-serif; touch-action: none;
+    -webkit-user-select: none; user-select: none; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1;
+    box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+  #touchPad .tb.on { background: rgba(255,255,255,.5); color: #111; transform: scale(.94); }
+  #touchPad .steerL { left: calc(16px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 92px; height: 92px; font-size: 34px; }
+  #touchPad .steerR { left: calc(124px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 92px; height: 92px; font-size: 34px; }
+  #touchPad .gas { right: calc(16px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 104px; height: 104px; background: rgba(46,125,50,.6); }
+  #touchPad .brake { right: calc(132px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); width: 78px; height: 78px; background: rgba(198,40,40,.55); font-size: 15px; }
+  #touchPad .item { right: calc(34px + env(safe-area-inset-right)); bottom: calc(134px + env(safe-area-inset-bottom)); width: 78px; height: 78px; font-size: 30px; background: rgba(255,179,0,.45); }
+  #touchPad .item.empty { opacity: .35; font-size: 14px; }
+  body.autoGas #touchPad .gas { display: none; }
+  body.autoGas #touchPad .brake { right: calc(24px + env(safe-area-inset-right)); width: 92px; height: 92px; }
+  body.autoGas #touchPad .item { right: calc(34px + env(safe-area-inset-right)); bottom: calc(124px + env(safe-area-inset-bottom)); }
+  #touchPad .tops { position: absolute; left: calc(8px + env(safe-area-inset-left)); top: 104px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+  #touchPad .tbs { pointer-events: auto; border: 2px solid rgba(255,255,255,.8); background: rgba(0,0,0,.45); color: #fff; border-radius: 8px;
+    font: 900 11px 'M PLUS Rounded 1c', sans-serif; padding: 4px 7px; touch-action: manipulation; }
+  #rotateMsg { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.88); color: #fff; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-weight: 900; font-size: 22px; gap: 12px; text-align: center; }
+  #rotateMsg .big { font-size: 64px; }
+
+  /* ===== スマホ用のレイアウト ===== */
+  body.mobile .panel { padding: 3px 10px; border-width: 2px; border-radius: 10px; }
+  body.mobile #rankBox { top: 6px; left: calc(6px + env(safe-area-inset-left)); }
+  body.mobile #rankNum { font-size: 40px; } body.mobile #rankOf { font-size: 16px; }
+  body.mobile #lapBox { top: 6px; right: calc(6px + env(safe-area-inset-right)); }
+  body.mobile #lapNum { font-size: 22px; } body.mobile #timeNum { font-size: 12px; } body.mobile .lbl { font-size: 10px; }
+  body.mobile #itemBox { top: 6px; width: 96px; padding: 2px 6px; }
+  body.mobile #itemSlot { font-size: 24px; min-height: 30px; } body.mobile .itName { display: none; }
+  body.mobile #speedBox { bottom: auto; top: 64px; left: calc(6px + env(safe-area-inset-left)); }
+  body.mobile #speedNum { font-size: 24px; } body.mobile .unit { font-size: 12px; }
+  body.mobile #minimap { width: 96px; height: 96px; bottom: auto; top: 6px; right: calc(84px + env(safe-area-inset-right)); border-width: 2px; }
+  body.mobile #banner { font-size: 12vw; -webkit-text-stroke: 4px #1a1a1a; }
+  body.mobile #banner.goal, body.mobile #banner.go { font-size: 15vw; }
+  body.mobile #passPop { font-size: 30px; top: 40%; }
+  body.mobile #hint { font-size: 13px; top: 22%; max-width: 70vw; white-space: normal; text-align: center; }
+  body.mobile #wrongWay { font-size: 30px; }
+  body.mobile #bonusHud { transform: translateX(-50%) scale(.62); transform-origin: top center; top: 4px; }
+  body.mobile #preRace { transform: translate(-50%, -50%) scale(.55); }
+  body.mobile #muteBadge { font-size: 11px; bottom: auto; top: 4px; }
+  body.mobile .card { padding: 16px 16px; }
+  body.mobile .logo { font-size: 40px; } body.mobile .logo.small { font-size: 30px; } body.mobile .sub { margin: 6px 0 10px; font-size: 14px; }
+  body.mobile .bigFace { width: 60px; height: 60px; border-width: 3px; margin-bottom: 2px; }
+  body.mobile #topStats { display: none; }
+  body.mobile .topName { font-size: 17px; }
+  body.mobile .btns { margin-top: 8px; gap: 6px; }
+  body.mobile select.courseSel { font-size: 13px; padding: 5px 8px; }
+  body.mobile .note { margin-top: 6px; }
+  body.mobile .netBadge { margin-top: 6px; }
+  body.mobile .card { max-width: 640px; }
+  body.mobile .btn { font-size: 18px; padding: 10px 20px; }
+  body.mobile #scrTop .btns .btn { padding: 10px 16px; }
+  body.mobile .qlab { transform: scale(.6); transform-origin: top left; }
+  body.mobile #ql1, body.mobile #ql3 { transform-origin: top right; }
+  body.mobile #specMap { width: 150px; height: 150px; }
+  body.mobile #specInfo { font-size: 12px; top: calc(50% - 96px); }
+  body.mobile .tourLogo { font-size: 22px; } body.mobile #tourStatus, body.mobile #lobbyStatus { font-size: 13px; }
+  body.mobile #tour, body.mobile #lobby { padding: 10px 12px; }
+  body.mobile .cmpCard { transform: scale(.85); }
   .hidden { display: none !important; }
 
   /* ===== HUD ===== */
@@ -354,6 +419,19 @@
       </select>
     </div>
     <div class="btns">
+      <select id="qualitySel" class="courseSel">
+        <option value="auto">画質：自動</option>
+        <option value="high">画質：高</option>
+        <option value="low">画質：低（軽い）</option>
+      </select>
+      <select id="touchSel" class="courseSel">
+        <option value="auto">操作ボタン：自動</option>
+        <option value="on">操作ボタン：表示</option>
+        <option value="off">操作ボタン：非表示</option>
+      </select>
+      <button class="btn gray small hidden" id="fsBtn">⛶ 全画面</button>
+    </div>
+    <div class="btns">
       <button class="btn" id="startBtn">ひとりで走る（Enter）</button>
       <button class="btn blue" id="entryBtn">大会に参加する</button>
       <button class="btn green" id="freeBtn">フリー対戦</button>
@@ -438,6 +516,14 @@
         <tr><td><span class="key">M</span></td><td>サウンド ON/OFF</td></tr>
         <tr><td><span class="key">Esc</span></td><td>一時停止（ひとりで走るときだけ）</td></tr>
       </table>
+
+      <h3>スマホで遊ぶとき</h3>
+      <ul>
+        <li>スマホは<b>横向き</b>で持ちます。左下の <b>◀ ▶</b> でハンドル、右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b></li>
+        <li>最初は <b>自動アクセル</b>（押さなくても進む）。画面左の「自動アクセル」を押すと、アクセルボタンで自分で踏むモードに切り替わります</li>
+        <li>Androidはタイトル画面の「全画面」で広く使えます。iPhoneは「ホーム画面に追加」から開くと広く使えます</li>
+        <li>カクつくときはタイトル画面の「画質：低（軽い）」を選んでください</li>
+      </ul>
 
       <h3>目黒川ジャンプのやり方</h3>
       <div class="point"><b>ジャンプボタンはありません。</b>オレンジと黒のしま模様の「ジャンプ台」に、<b>↑を押しっぱなしのまま、まっすぐ</b>乗り上げるだけで自動で飛びます。</div>
@@ -542,6 +628,21 @@
 </div>
 
 <!-- 一時停止（ひとりで走るときのみ） -->
+<!-- スマホの操作ボタン -->
+<div id="touchPad" class="hidden">
+  <button class="tb steerL" data-k="ArrowLeft" aria-label="左">◀</button>
+  <button class="tb steerR" data-k="ArrowRight" aria-label="右">▶</button>
+  <button class="tb item empty" data-act="item" aria-label="アイテム">ITEM</button>
+  <button class="tb brake" data-k="ArrowDown">ブレーキ<br>バック</button>
+  <button class="tb gas" data-k="ArrowUp">アクセル</button>
+  <div class="tops">
+    <button class="tbs" data-act="auto" id="autoGasBtn">自動アクセル</button>
+    <button class="tbs" data-act="pause" id="padPause">⏸ 一時停止</button>
+    <button class="tbs" data-act="mute" id="padMute">🔊 音</button>
+  </div>
+</div>
+<div id="rotateMsg" class="hidden"><div class="big">📱↻</div>スマホを横向きにしてください</div>
+
 <div id="pause" class="overlay hidden">
   <div class="card">
     <div class="logo small">PAUSE</div>
@@ -637,8 +738,14 @@ try {
 // =====================================================================
 //  基本セットアップ
 // =====================================================================
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// ---- 端末の判定と画質（スマホで開いたときだけ軽くする。PCは今のまま） ----
+const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const IS_MOBILE = IS_TOUCH && Math.min(screen.width, screen.height) <= 820;
+const QUALITY = (() => { try { return localStorage.getItem('masao_quality') || 'auto'; } catch (e) { return 'auto'; } })();
+const LOW = QUALITY === 'low' || (QUALITY === 'auto' && IS_MOBILE);
+if (IS_MOBILE) document.body.classList.add('mobile');
+const renderer = new THREE.WebGLRenderer({ antialias: !LOW, powerPreference: 'high-performance' });
+renderer.setPixelRatio(LOW ? Math.min(window.devicePixelRatio, 2) * 0.5 : Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.domElement.id = 'view';
 document.body.prepend(renderer.domElement);
@@ -1084,7 +1191,7 @@ function buildRiver(night) {
   reserved.push({ x: riverC.x, z: riverC.z, r: 30 });
   buildRampSign('目黒川ジャンプ↑', 'MEGURO RIVER JUMP');
   // 桜吹雪
-  const n = 260, pos = new Float32Array(n * 3), seeds = [];
+  const n = LOW ? 90 : 260, pos = new Float32Array(n * 3), seeds = [];
   for (let i = 0; i < n; i++) seeds.push({ x: (wrng() - 0.5) * RIVER_LEN, z: (wrng() - 0.5) * 60, y: wrng() * 14, s: 0.6 + wrng() * 0.8, p: wrng() * 6 });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -1181,11 +1288,11 @@ function buildCity(night) {
   const mats = palette.map(c => night ? new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(0.8), map: winTexNight })
     : new THREE.MeshLambertMaterial({ color: c, map: winTexDay }));
   const placed = [];
-  const rings = courseId === 'bonus' ? [[30, 40]] : [[8, 14], [36, 30]];
+  const rings = courseId === 'bonus' ? [[30, 40]] : LOW ? [[8, 14]] : [[8, 14], [36, 30]];
   for (const ring of rings) {
     for (let i = 0; i < N; i += courseId === 'bonus' ? 12 : 8) {
       for (const side of [1, -1]) {
-        if (wrng() < 0.2) continue;
+        if (wrng() < (LOW ? 0.4 : 0.2)) continue;
         const w = 6 + wrng() * 10, d = 6 + wrng() * 10, h = 8 + wrng() * 36;
         const r = Math.max(w, d) * 0.72;
         const dist = hw + ring[0] + r + wrng() * ring[1];
@@ -1205,6 +1312,7 @@ function buildCity(night) {
 function buildRoadside(night) {
   const trees = [], lamps = [];
   for (let i = 0; i < N; i += 22) {
+    if (LOW && (i / 22) % 2) continue;       // 軽量モードは本数を半分に
     for (const side of [1, -1]) {
       const p = worldAt(i, side * (hw + 9.5));
       if (!clearOfTrack(p.x, p.z, hw + 8) || nearRiver(p.x, p.z, 6) || isReserved(p.x, p.z, 3)) continue;
@@ -1246,7 +1354,7 @@ function buildClouds() {
   }
 }
 function buildStars() {
-  const n = 900, pos = new Float32Array(n * 3);
+  const n = LOW ? 400 : 900, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const u = wrng() * Math.PI * 2, v = 0.08 + wrng() * 0.9, r = 1300;
     pos[i * 3] = Math.cos(u) * Math.cos(v) * r; pos[i * 3 + 1] = Math.sin(v) * r; pos[i * 3 + 2] = Math.sin(u) * Math.cos(v) * r;
@@ -1410,6 +1518,7 @@ const pData = Array.from({ length: PMAX }, () => ({ life: 0, vx: 0, vy: 0, vz: 0
 let pNext = 0;
 const tmpC = new THREE.Color();
 function burst(x, y, z, n, colors, speed = 8, up = 6, life = 1, grav = 18) {
+  if (LOW) n = Math.ceil(n / 2);
   for (let k = 0; k < n; k++) {
     const i = pNext; pNext = (pNext + 1) % PMAX;
     const d = pData[i], a = Math.random() * Math.PI * 2, sp = speed * (0.3 + Math.random() * 0.7);
@@ -1458,7 +1567,7 @@ function drawSpeedLines(amount) {
   sctx.clearRect(0, 0, W, H);
   const cx = W / 2, cy = H * 0.45, R = Math.hypot(W, H) / 2;
   sctx.strokeStyle = `rgba(255,255,255,${Math.min(0.55, amount * 0.55)})`;
-  const n = Math.floor(30 + amount * 40);
+  const n = Math.floor((30 + amount * 40) * (LOW ? 0.5 : 1));
   for (let k = 0; k < n; k++) {
     const a = Math.random() * Math.PI * 2, r0 = R * (0.55 + Math.random() * 0.25), r1 = R * 1.05;
     sctx.lineWidth = 1 + Math.random() * 2.5 * amount;
@@ -3360,7 +3469,7 @@ function buildTubeWorld() {
   hemiLight.color.set(0xffffff); hemiLight.groundColor.set(0x444444); hemiLight.intensity = 0.9; sun.intensity = 0.6;
 
   // トンネル本体（自前で輪切りを並べる）
-  const RINGS = 1500, SEG = 28, pos = [], uv = [], idx = [];
+  const RINGS = LOW ? 800 : 1500, SEG = LOW ? 20 : 28, pos = [], uv = [], idx = [];
   for (let r = 0; r <= RINGS; r++) {
     const s = r / RINGS * tube.L, F = tubeFrame(s);
     for (let j = 0; j <= SEG; j++) {
@@ -3439,7 +3548,7 @@ function buildTubeWorld() {
   // ぶっ飛ばせる車（渋滞中の乗用車・トラック）
   tubeCars = [];
   const r = mulberry32(4242);
-  for (let k = 0; k < 120; k++) {
+  for (let k = 0; k < (LOW ? 80 : 120); k++) {
     const s = 560 + r() * (tube.L - 800);
     const roll = r(), th = roll < 0.75 ? (r() - 0.5) * 1.1 : roll < 0.93 ? (r() < 0.5 ? -1 : 1) * (1.2 + r() * 0.5) : Math.PI + (r() - 0.5) * 0.6;
     const truck = r() < 0.25;
@@ -4257,6 +4366,82 @@ function updatePreRace() {
 }
 
 // =====================================================================
+//  スマホの操作ボタン
+// =====================================================================
+const padEl = $('touchPad');
+const touchPref = () => store.get('touchui') || 'auto';
+const touchOn = () => touchPref() === 'on' || (touchPref() === 'auto' && IS_TOUCH);
+let autoGas = store.get('autogas') !== false;
+const touchKeys = {};
+function setAutoGas(v) {
+  autoGas = v; store.set('autogas', v);
+  document.body.classList.toggle('autoGas', v);
+  $('autoGasBtn').textContent = v ? '自動アクセル：ON' : '自動アクセル：OFF';
+}
+setAutoGas(autoGas);
+padEl.querySelectorAll('[data-k]').forEach(b => {
+  const k = b.dataset.k;
+  const on = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (x) {} touchKeys[k] = true; keys[k] = true; b.classList.add('on'); initAudio(); };
+  const off = () => { touchKeys[k] = false; keys[k] = false; b.classList.remove('on'); };
+  b.addEventListener('pointerdown', on);
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, off));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+padEl.querySelectorAll('[data-act]').forEach(b => {
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); initAudio();
+    const a = b.dataset.act;
+    if (a === 'item') useItem(player);
+    else if (a === 'auto') setAutoGas(!autoGas);
+    else if (a === 'pause') togglePause();
+    else if (a === 'mute') setMuted(!muted);
+  });
+});
+let padShown = false, padItemKey = '';
+function updateTouchPad() {
+  const show = touchOn() && (mode === 'solo' || mode === 'net') && (state === 'countdown' || state === 'race' || state === 'finished');
+  if (show !== padShown) {
+    padShown = show; padEl.classList.toggle('hidden', !show);
+    if (!show) { ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].forEach(k => { if (touchKeys[k]) { touchKeys[k] = false; keys[k] = false; } }); padEl.querySelectorAll('.on').forEach(x => x.classList.remove('on')); }
+  }
+  $('rotateMsg').classList.toggle('hidden', !(show && IS_MOBILE && window.innerHeight > window.innerWidth));
+  if (!show) return;
+  // 自動アクセル：ブレーキを押していない間はアクセル
+  if (autoGas) keys.ArrowUp = state === 'race' && !touchKeys.ArrowDown;
+  $('padPause').style.display = mode === 'solo' ? '' : 'none';
+  $('padMute').textContent = muted ? '🔇 音' : '🔊 音';
+  // アイテムボタンに持っているアイテムを表示
+  const it = itemsOn() ? (player.roll > 0 ? 'roll' : player.item || '') : 'none';
+  if (it !== padItemKey) {
+    padItemKey = it;
+    const b = padEl.querySelector('.item');
+    b.style.display = it === 'none' ? 'none' : '';
+    b.classList.toggle('empty', !player.item || player.roll > 0);
+    b.innerHTML = it === 'roll' ? '？' : player.item ? ITEM_DEFS[player.item].icon : 'ITEM';
+  }
+  if (player.roll > 0) padItemKey = '';
+}
+// タイトル画面の設定
+$('qualitySel').value = QUALITY;
+$('qualitySel').addEventListener('change', e => {
+  try { localStorage.setItem('masao_quality', e.target.value); } catch (x) {}
+  toast('画質を変更しました。読み込み直します…');
+  setTimeout(() => location.reload(), 700);
+});
+$('touchSel').value = touchPref();
+$('touchSel').addEventListener('change', e => store.set('touchui', e.target.value));
+const fsOK = IS_TOUCH && document.documentElement.requestFullscreen && !document.fullscreenElement;
+if (fsOK) $('fsBtn').classList.remove('hidden');
+if (IS_TOUCH) $('startBtn').textContent = 'ひとりで走る';
+$('fsBtn').addEventListener('click', async () => {
+  try {
+    await document.documentElement.requestFullscreen();
+    if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+    $('fsBtn').classList.add('hidden');
+  } catch (e) { toast('全画面にできませんでした'); }
+});
+
+// =====================================================================
 //  メインループ
 // =====================================================================
 let specLap = 1, adminRenderT = 0;
@@ -4327,6 +4512,7 @@ function update(dt) {
   freeTick();
   soundPolicyTick();
   updatePreRace();
+  updateTouchPad();
   updateBonusHud();
   const me = (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished') ? player : null;
   drawSpeedLines(me && isBonus() ? Math.min(1.8, Math.max(0, (me.speed - 45) / 100)) : me ? Math.max(0, (me.speed / me.maxSpeed - 0.8) * 4) * (isBonus() ? 1.4 : 0.8) + (me.boost > 0 ? 0.6 : 0) + (me.airborne ? 0.3 : 0) : 0);
