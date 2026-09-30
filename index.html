@@ -232,7 +232,7 @@
   #itemBox.hasItem { border-color: #ffd54f; box-shadow: 0 0 18px rgba(255,213,79,.8); animation: itemPulse 1s ease-in-out infinite; }
   @keyframes itemPulse { 50% { box-shadow: 0 0 4px rgba(255,213,79,.4); } }
   select.courseSel { font: inherit; font-weight: 900; font-size: 15px; padding: 8px 12px; border-radius: 10px; border: 2px solid #90a4ae; background: #fff; color: #222; }
-  #hud.bonusMode #rankBox, #hud.bonusMode #lapBox, #hud.bonusMode #itemBox { display: none; }
+  #hud.bonusMode #rankBox, #hud.bonusMode #lapBox, #hud.bonusMode #itemBox, #hud.bonusMode #minimap { display: none; }
   #bonusHud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; z-index: 5; pointer-events: none;
     background: rgba(0,0,0,.55); border: 3px solid #ffd54f; border-radius: 16px; padding: 6px 26px; text-shadow: 0 2px 0 #000; }
   #bonusHud .bl { font-size: 13px; letter-spacing: .25em; color: #ffd54f; font-weight: 900; }
@@ -344,7 +344,7 @@
       <select id="courseSel" class="courseSel">
         <option value="gotanda">コース：五反田GP</option>
         <option value="rainbow">コース：目黒川レインボーロード（決勝）</option>
-        <option value="bonus">ボーナスステージ（30秒でぶっ壊せ）</option>
+        <option value="bonus">ボーナス：山手トンネル（東京湾ダイブ）</option>
       </select>
       <select id="cpuSel" class="courseSel">
         <option value="easy">CPU：よわい</option>
@@ -509,7 +509,7 @@
         <li>自分のレースの番になると、自動でレース画面に切り替わる。出番以外は観戦画面</li>
         <li>各レース上位2名が勝ち上がり。決勝の1位が「マサオカート王」！</li>
         <li>決勝だけは夜の <b>目黒川レインボーロード</b>。ヘアピンカーブあり、ゴール直前に目黒川ジャンプ</li>
-        <li>優勝者は <b>ボーナスステージ</b> に挑戦：30秒間、超高速で巨大ピン・箱・コーンをなぎ倒してスコアを競う</li>
+        <li>優勝者は <b>ボーナスステージ「山手トンネル」</b> に挑戦：円いトンネルの壁も天井も走れる。池尻JCTのぐるぐるからスタートし、青い矢印で最高速度を上げて1,000km/h超えを目指す。渋滞の車をぶっ飛ばし、最後は東京湾にダイブ</li>
       </ol>
       <p>どちらのコースも「ひとりで走る」のコース選択で練習できます。</p>
     </div>
@@ -593,7 +593,9 @@ const CONFIG = {
   ITEMS: true,              // アイテム・障害物を使う（false で無し）
   PARK_SECONDS: 3,          // PARK24 で駐車させる秒数
   CATCHUP: 0.05,            // 追い上げ補正：最下位は最高速度が最大5%アップ（0で無効）
-  BONUS_SECONDS: 30,        // 優勝者ボーナスステージの制限時間
+  TUBE_START_CAP: 110,      // 山手トンネル：最初の最高速度（×4でkm/h表示＝440km/h）
+  TUBE_PAD_CAP: 11,         // 山手トンネル：ブースト矢印1つで上がる最高速度（＋44km/h）
+  TUBE_MAX_CAP: 330,        // 山手トンネル：最高速度の上限（1,320km/h）
   BONUS_MAX_SPEED: 95,      // ボーナスステージの最高速度（通常は42）
   BONUS_BOOST: 130,         // ボーナスステージのブースト速度
   FREE_WAIT_AFTER_GOAL: 30, // フリー対戦：1人目のゴールから何秒で順位を確定するか
@@ -760,7 +762,7 @@ const COURSES = {
       [-70, -250], [-170, -310], [-280, -260], [-300, -140], [-230, -40], [-120, 20]], landmarks: true
   },
   bonus: {
-    title: 'MASAO BONUS STAGE', short: 'ボーナスステージ', night: false, river: false, rampPos: 0.12,
+    title: 'YAMATE TUNNEL', short: '山手トンネル（ボーナス）', night: false, river: false, rampPos: 0.12,
     points: [[0, 0], [300, 0], [600, 0], [800, -60], [870, -200], [800, -340], [600, -400], [300, -400],
       [0, -400], [-200, -340], [-270, -200], [-200, -60]], landmarks: false
   }
@@ -876,11 +878,13 @@ winTexDay.keep = winTexNight.keep = true;
 function buildCourse(id) {
   if (courseId === id) return;
   if (worldGroup) { scene.remove(worldGroup); disposeTree(worldGroup); }
-  animated.length = 0; train = null; bonusGroup = null;
+  animated.length = 0; train = null;
   worldGroup = new THREE.Group(); scene.add(worldGroup);
   courseId = id; course = COURSES[id];
   wrng = mulberry32(CONFIG.SEED + id.length * 7919);
   const night = course.night;
+  camera.far = 2000; camera.updateProjectionMatrix(); tubeSky = null;
+  if (id === 'bonus') { buildTubeWorld(); courseHooks.forEach(f => f()); return; }
 
   // 中心線
   curve = new THREE.CatmullRomCurve3(course.points.map(p => new THREE.Vector3(p[0], 0, p[1])), true, 'centripetal');
@@ -1353,6 +1357,7 @@ function resetKart(k, g) {
 function syncModel(k) {
   const g = k.model.group;
   syncShadow(k);
+  if (isBonus() && tube && (k.tube || k.fly)) { if (k.shadow) k.shadow.visible = false; g.visible = k.kind !== 'off'; placeKartTube(k); return; }
   g.visible = k.kind !== 'off';
   g.position.set(k.pos.x, k.y + Y_ROAD, k.pos.z);
   g.rotation.y = k.heading;
@@ -1756,7 +1761,7 @@ function updateEngine() {
   master.gain.setTargetAtTime(muted || forcedMute() ? 0 : 1, actx.currentTime, 0.05);
   const on = (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished' || (state === 'countdown' && cdT < 3.0));
   engGain.gain.setTargetAtTime(on ? 0.03 : 0, actx.currentTime, 0.1);
-  engOsc.frequency.setTargetAtTime(55 + Math.abs(player.speed) * 3.2, actx.currentTime, 0.05);
+  engOsc.frequency.setTargetAtTime(Math.min(760, 55 + Math.abs(player.speed) * 3.2), actx.currentTime, 0.05);
 }
 
 // =====================================================================
@@ -1875,6 +1880,7 @@ function respawnAfterRiver(k) {
 // =====================================================================
 function updatePlayer(dt) {
   const p = player;
+  if (isBonus()) { updateTube(dt); return; }
   if (p.splashTimer > 0) {
     p.splashTimer -= dt;
     p.y = Math.max(-2.5, p.y - dt * 3);
@@ -1962,7 +1968,6 @@ function updatePlayer(dt) {
     } else if (el.textContent.startsWith('ジャンプ台')) el.className = 'hidden';
   }
 
-  if (isBonus()) { if (!p.finished && raceTime >= CONFIG.BONUS_SECONDS) finishBonus(); return; }
   // ラップ・ゴール判定
   const lap = lapOf(p);
   if (!p.finished && lap > p.lapShown) {
@@ -2055,7 +2060,9 @@ function publishLive(dt, force = false) {
     rid: curRace.id, seq: ++pubSeq, x: r2(p.pos.x), z: r2(p.pos.z), y: r2(p.y), h: r2(p.heading),
     sp: r2(p.speed), vy: r2(p.vy), pg: r2(p.prog), fin: p.finished ? 1 : 0, ft: r2(p.finishTime), air: p.airborne ? 1 : 0,
     park: p.parkT > 0 ? 1 : 0, spin: p.spinT > 0 ? 1 : 0, star: p.starT > 0 ? 1 : 0,
-    ...(isBonus() ? { score: bonusScore, combo: comboT > 0 ? bonusCombo : 0, hits: bonusHits.slice() } : {})
+    ...(isBonus() && ts && p.tube ? { score: bonusScore, combo: comboT > 0 ? bonusCombo : 0, hits: bonusHits.slice(),
+      ts: r2(p.tube.s), th: r2(ts.th), maxk: ts.maxKmh, smashed: ts.smashed, pads: tubePads.map((q, i) => q.got ? i : -1).filter(i => i >= 0),
+      fly: ts.fly ? 1 : 0, ...(ts.fly ? { x: r2(ts.fly.pos.x), y: r2(ts.fly.pos.y), z: r2(ts.fly.pos.z) } : {}) } : {})
   });
 }
 function applyLive() {
@@ -2069,6 +2076,17 @@ function applyLive() {
 function updateRemote(k, dt) {
   const n = k.net;
   if (!n) return;
+  if (isBonus() && tube) {           // ボーナス：トンネル内の位置（s・θ）で再現
+    const age = Math.min(0.4, (performance.now() - n.at) / 1000);
+    k.speed = n.sp || 0;
+    k.fly = n.fly ? new THREE.Vector3(n.x, n.y, n.z) : null;
+    const s1 = (n.ts || 0) + (n.fly ? 0 : k.speed * age);
+    if (!k.tube) k.tube = { s: s1, th: n.th || 0 };
+    k.tube.s += (s1 - k.tube.s) * Math.min(1, dt * 12);
+    k.tube.th += angDiff(n.th || 0, k.tube.th) * Math.min(1, dt * 12);
+    k.prog = k.tube.s / ds;
+    return;
+  }
   const age = Math.min(0.4, (performance.now() - n.at) / 1000);
   const tx = n.x + Math.sin(n.h) * n.sp * age, tz = n.z + Math.cos(n.h) * n.sp * age;
   const a = 1 - Math.exp(-12 * dt);
@@ -2130,6 +2148,8 @@ courseHooks.push(() => {
 });
 const camTarget = new THREE.Vector3();
 function followCam(cam, k, dt, snap) {
+  if (isBonus() && tube && (k.tube || k.fly)) return tubeCam(cam, k, dt, snap);
+  cam.up.set(0, 1, 0);
   const fx = Math.sin(k.heading), fz = Math.cos(k.heading);
   const air = k.airborne || k.splashTimer > 0 || k.y > 1.5;
   const back = air ? 18 : 9.5, up = air ? 9 : 4.6;   // ジャンプ中はカメラを引く
@@ -2314,7 +2334,7 @@ function catchUp(p) {
 function finishBonus() {
   const p = player;
   p.finished = true; p.finishTime = raceTime; state = 'finished';
-  banner('FINISH!', 'goal'); FX.confetti(p); stopMusic();
+  banner('FINISH!', 'goal'); stopMusic();
   fanfare([523, 659, 784, 1047, 1319, 1568], 0.12);
   say(`${bonusScore}てん！`, 1.4, 1.2);
   if (mode === 'solo') finishTimer = 3;
@@ -2323,8 +2343,8 @@ function finishBonus() {
     setTimeout(() => {
       const R = Net.data.race;
       if (R && R.status === 'run' && R.kind === 'bonus') {
-        Net.set('race', { ...R, status: 'done', score: bonusScore });
-        const T = tourOf(); if (T.status === 'done') Net.set('tour', { ...T, bonusScore });
+        Net.set('race', { ...R, status: 'done', score: bonusScore, maxKmh: ts ? ts.maxKmh : 0 });
+        const T = tourOf(); if (T.status === 'done') Net.set('tour', { ...T, bonusScore, bonusKmh: ts ? ts.maxKmh : 0 });
       }
     }, 1500);
   }
@@ -2595,7 +2615,7 @@ function showSoloResults() {
   state = 'results';
   playMusic('result');
   if (isBonus()) {
-    showResultTable('BONUS STAGE', [{ rank: '★', name: player.name, color: player.color, me: true, time: bonusScore.toLocaleString() + '点' }],
+    showResultTable('山手トンネル 結果', [{ rank: '★', name: player.name, color: player.color, me: true, note: `最高 ${(ts ? ts.maxKmh : 0).toLocaleString()}km/h・${ts ? ts.smashed : 0}台`, time: bonusScore.toLocaleString() + '点' }],
       [{ label: 'もう一度（R）', fn: startSolo }, { label: 'タイトル（T）', cls: 'gray', fn: toTitle }]);
     return;
   }
@@ -2877,7 +2897,7 @@ function renderTour() {
   const ch = $('champ');
   if (T.status === 'done' && T.champion) {
     const e = E[T.champion] || { name: '?' };
-    ch.innerHTML = `<img src="${entryFace(T.champion)}"><div class="ct">👑 マサオカート王 👑</div><div class="cn">${esc(e.name)}</div>${T.bonusScore != null ? `<div class="cb">ボーナスステージ ${Number(T.bonusScore).toLocaleString()}点</div>` : ''}`;
+    ch.innerHTML = `<img src="${entryFace(T.champion)}"><div class="ct">👑 マサオカート王 👑</div><div class="cn">${esc(e.name)}</div>${T.bonusScore != null ? `<div class="cb">山手トンネル ${Number(T.bonusScore).toLocaleString()}点（最高 ${Number(T.bonusKmh || 0).toLocaleString()}km/h）</div>` : ''}`;
     ch.classList.remove('hidden');
   } else ch.classList.add('hidden');
   // 表
@@ -3000,8 +3020,8 @@ function finalizeRace(R) {
   if (!R || R.status !== 'run') return;
   if (R.kind === 'bonus') {
     const L = (Net.data.live || {})[toArr(R.m)[0]] || {};
-    Net.set('race', { ...R, status: 'done', score: L.score || 0 });
-    const T = tourOf(); if (T.status === 'done') Net.set('tour', { ...T, bonusScore: L.score || 0 });
+    Net.set('race', { ...R, status: 'done', score: L.score || 0, maxKmh: L.maxk || 0 });
+    const T = tourOf(); if (T.status === 'done') Net.set('tour', { ...T, bonusScore: L.score || 0, bonusKmh: L.maxk || 0 });
     return;
   }
   const rows = currentOrder(R);
@@ -3125,6 +3145,7 @@ function enterRaceView(R, asRacer) {
     specSlots[i] = k;
   });
   resetItems();
+  resetBonus();
   karts.forEach(syncModel);
   state = 'countdown'; cdShown = 0; finishTimer = 0; raceTime = 0; lastRank = 4; passCD = 0; specLap = 1;
   processEvents();
@@ -3142,7 +3163,7 @@ function enterRaceView(R, asRacer) {
 function showNetResult(R) {
   if (R.kind === 'bonus') {
     const who = raceInfo(R, toArr(R.m)[0]);
-    showResultTable('ボーナスステージ 結果', [{ rank: '👑', name: who.name, color: '#ffd54f', face: who.face || MASAO_FACE, me: toArr(R.m)[0] === myId, time: (R.score || 0).toLocaleString() + '点' }],
+    showResultTable('山手トンネル 結果', [{ rank: '👑', name: who.name, color: '#ffd54f', face: who.face || MASAO_FACE, me: toArr(R.m)[0] === myId, note: `最高 ${(R.maxKmh || 0).toLocaleString()}km/h`, time: (R.score || 0).toLocaleString() + '点' }],
       [{ label: 'OK', fn: () => $('results').classList.add('hidden') }]);
     playMusic('result'); return;
   }
@@ -3228,126 +3249,411 @@ Net.cb = top => {
 };
 
 // =====================================================================
-//  優勝者ボーナスステージ：30秒で巨大ピン・箱・コーンをどれだけ壊せるか
+//  優勝者ボーナスステージ「山手トンネル」
+//  円柱のトンネルの内側を走る（床・壁・天井どこでも走れる／コースアウトなし）
+//  池尻JCTのぐるぐるからスタート → ブースト矢印で最高速度アップ → 東京湾にダイブで終了
 // =====================================================================
 const isBonus = () => courseId === 'bonus';
-let bonusObjs = [], bonusScore = 0, bonusCombo = 0, comboT = 0, bonusHits = [], bonusGroup = null;
-const pinGeo = new THREE.LatheGeometry([[0, 0], [0.75, 0], [0.95, 0.9], [0.8, 2.0], [0.42, 2.9], [0.5, 3.5], [0.62, 4.0], [0.45, 4.6], [0, 4.75]].map(p => new THREE.Vector2(p[0] * 1.2, p[1] * 1.2)), 14);
-const pinMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-const stripeGeo = new THREE.CylinderGeometry(0.56, 0.6, 0.35, 14);
-const stripeMat = new THREE.MeshLambertMaterial({ color: 0xe53935 });
-const crateTex = textTexture('MASAO', { w: 256, h: 256, bg: '#c8914f', fg: '#6d3f16', size: 64, border: '#8d5a2b' });
-crateTex.keep = true;
-const crateGeo = new THREE.BoxGeometry(2.6, 2.6, 2.6);
-const crateMat = new THREE.MeshLambertMaterial({ map: crateTex });
-const coneGeo = new THREE.ConeGeometry(0.9, 2.4, 12);
+const coneGeo = new THREE.ConeGeometry(0.9, 2.4, 12);          // 障害物のコーン（通常コースでも使う）
 const coneMat = new THREE.MeshLambertMaterial({ color: 0xff6d00 });
-function buildBonusObjects() {
-  if (bonusGroup) { worldGroup.remove(bonusGroup); }
-  bonusGroup = new THREE.Group(); worldGroup.add(bonusGroup);
-  bonusObjs = [];
-  const r = mulberry32(777);
-  let id = 0;
-  const put = (i, lat, fwd, type) => {
-    const p = worldAt(i, lat, fwd);
-    let mesh, rad, pts, color, h;
-    if (type === 'pin') {
-      mesh = new THREE.Group();
-      mesh.add(new THREE.Mesh(pinGeo, pinMat));
-      const s = new THREE.Mesh(stripeGeo, stripeMat); s.position.y = 4.1; mesh.add(s);
-      rad = 1.2; pts = 100; color = '#ffffff'; h = 5.6;
-    } else if (type === 'crate') {
-      mesh = new THREE.Mesh(crateGeo, crateMat); mesh.position.y = 1.3; rad = 1.6; pts = 150; color = '#c8914f'; h = 2.6;
-    } else {
-      mesh = new THREE.Mesh(coneGeo, coneMat); rad = 0.9; pts = 50; color = '#ff6d00'; h = 2.4;
-    }
-    const base = type === 'crate' ? 1.3 : type === 'cone' ? 1.2 : 0;
-    const holder = new THREE.Group();
-    holder.position.set(p.x, base, p.z); holder.rotation.y = headingAt(i);
-    if (type === 'crate') mesh.position.y = 0;
-    holder.add(mesh);
-    bonusGroup.add(holder);
-    bonusObjs.push({ id: id++, holder, x: p.x, z: p.z, y: base, base, idx: i, rad, pts, color, h, state: 'stand', vx: 0, vy: 0, vz: 0, sx: 0, sz: 0, t: 0 });
+const TUBE_R = 9;                  // トンネルの半径
+const TUBE_KM = 18.2;              // 表示用：山手トンネルの長さ（km）
+let tube = null;                   // 中心線とフレーム
+let bonusScore = 0, bonusCombo = 0, comboT = 0, bonusHits = [];
+let tubeCars = [], tubePads = [], ts = null, tubeSky = null;   // ts = ボーナス中の自分の状態
+
+// --- 中心線：池尻JCT（1.5周しながら下る）→ 長いトンネル → 最後に上り坂で東京湾へ ---
+function makeTubePath() {
+  const pts = [];
+  for (let k = 0; k <= 18; k++) {
+    const t = k / 18 * Math.PI * 3;
+    pts.push(new THREE.Vector3(Math.cos(t) * 48, 70 - 45 * k / 18, Math.sin(t) * 48));
+  }
+  [[-58, 16, -110], [-15, 6, -250], [150, 0, -340], [400, -2, -380], [700, -4, -320], [1000, -6, -400], [1300, -4, -330],
+   [1600, -2, -410], [1900, -5, -340], [2200, -3, -420], [2500, -6, -350], [2800, -2, -420], [3100, -4, -360],
+   [3400, 0, -410], [3650, 8, -380], [3850, 22, -370], [4000, 36, -365]].forEach(p => pts.push(new THREE.Vector3(...p)));
+  return new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+}
+function buildTubeData() {
+  const curve = makeTubePath(), Ltot = curve.getLength(), M = 3000;
+  const P = curve.getSpacedPoints(M - 1), T = [], U = [], S = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < M; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(M - 1, i + 1)];
+    const t = b.clone().sub(a).normalize();
+    const u = up.clone().sub(t.clone().multiplyScalar(up.dot(t))).normalize();   // 「上」＝重力と逆向き
+    T.push(t); U.push(u); S.push(new THREE.Vector3().crossVectors(t, u));
+  }
+  return { curve, L: Ltot, M, P, T, U, S };
+}
+// s（入口からの距離）と θ（0=床、π=天井）から位置と向きを求める
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
+function tubeFrame(s) {
+  const f = Math.max(0, Math.min(tube.M - 1.001, s / tube.L * (tube.M - 1)));
+  const i = Math.floor(f), u = f - i;
+  return {
+    p: tube.P[i].clone().lerp(tube.P[i + 1], u),
+    t: tube.T[i].clone().lerp(tube.T[i + 1], u).normalize(),
+    up: tube.U[i].clone().lerp(tube.U[i + 1], u).normalize(),
+    side: tube.S[i].clone().lerp(tube.S[i + 1], u).normalize()
   };
-  const rampI = idxAtS(RAMP_END);
-  for (let i = 50, g = 0; i < N - 30; i += 42, g++) {
-    if (Math.abs(i - rampI) < 30) continue;
-    const c = (r() - 0.5) * 6, kind = g % 3;
-    if (kind === 0) {              // ボウリングのピン（10本）
-      let k = 0;
-      for (let row = 0; row < 4; row++) for (let j = 0; j <= row; j++, k++) put(i, c + (j - row / 2) * 2.6, row * 2.4, 'pin');
-    } else if (kind === 1) {       // 箱の壁
-      for (let j = -3; j <= 3; j++) put(i, j * 2.7, 0, 'crate');
-      for (let j = -2; j <= 2; j++) put(i, j * 2.7 + 1.3, 3, 'crate');
-    } else {                       // コーンの列
-      for (let j = 0; j < 8; j++) put(i, Math.sin(j) * 5, j * 3, 'cone');
+}
+function tubePose(s, th, r) {
+  const F = tubeFrame(s);
+  const radial = F.up.clone().multiplyScalar(-Math.cos(th)).add(F.side.clone().multiplyScalar(Math.sin(th)));
+  return { pos: F.p.clone().add(radial.clone().multiplyScalar(r)), n: radial.negate(), t: F.t, F };
+}
+const _m4 = new THREE.Matrix4();
+function orient(obj, fwd, up) {           // 前＝fwd、上＝up に向ける
+  const x = new THREE.Vector3().crossVectors(up, fwd).normalize();
+  const y = new THREE.Vector3().crossVectors(fwd, x).normalize();
+  _m4.makeBasis(x, y, fwd.clone().normalize());
+  obj.quaternion.setFromRotationMatrix(_m4);
+}
+
+// --- トンネルの壁紙（床＝アスファルト、壁＝タイル、天井＝照明） ---
+const tubeTex = (() => {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#23262d'; g.fillRect(0, 0, 256, 512);                        // 天井
+  g.fillStyle = '#d7d2c4'; g.fillRect(0, 70, 256, 110); g.fillRect(0, 332, 256, 110);   // 壁
+  g.fillStyle = '#3a3d44'; g.fillRect(0, 180, 256, 152);                       // 床
+  g.fillStyle = '#1e63c6'; g.fillRect(0, 150, 256, 10); g.fillRect(0, 352, 256, 10);  // 壁の青い帯
+  g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 2;
+  for (let x = 0; x < 256; x += 64) { g.beginPath(); g.moveTo(x, 70); g.lineTo(x, 180); g.moveTo(x, 332); g.lineTo(x, 442); g.stroke(); }
+  g.fillStyle = '#ffffff'; g.fillRect(0, 252, 120, 8);                         // センターライン（破線）
+  g.fillStyle = '#ffd54f'; g.fillRect(0, 186, 256, 5); g.fillRect(0, 321, 256, 5);   // 路肩の黄色線
+  g.fillStyle = '#fff6c8'; g.fillRect(90, 20, 76, 26); g.fillRect(90, 466, 76, 26);   // 天井の照明
+  g.fillStyle = 'rgba(255,240,180,.35)'; g.fillRect(80, 12, 96, 42); g.fillRect(80, 458, 96, 42);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); t.keep = true;
+  return t;
+})();
+const padTex = (() => {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,229,255,.25)'; g.fillRect(0, 0, 128, 160);
+  g.fillStyle = '#00e5ff'; g.strokeStyle = '#ffffff'; g.lineWidth = 6;
+  [0, 50, 100].forEach(y => { g.beginPath(); g.moveTo(14, y + 56); g.lineTo(64, y + 12); g.lineTo(114, y + 56); g.lineTo(114, y + 36); g.lineTo(64, y - 8); g.lineTo(14, y + 36); g.closePath(); g.fill(); });
+  const t = new THREE.CanvasTexture(c); t.keep = true; return t;
+})();
+const padMat = new THREE.MeshBasicMaterial({ map: padTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+const carColors = [0xe53935, 0xffffff, 0x1e88e5, 0x212121, 0xfdd835, 0x43a047, 0x9e9e9e];
+
+function buildTubeWorld() {
+  tube = buildTubeData();
+  // 他の処理（ミニマップ等）用に、上から見た中心線も用意しておく
+  curve = tube.curve; L = tube.L; ds = L / N;
+  samples = tube.curve.getSpacedPoints(N).slice(0, N).map(p => new THREE.Vector3(p.x, 0, p.z));
+  tangents = []; lefts = [];
+  for (let i = 0; i < N; i++) {
+    const a = samples[Math.max(0, i - 1)], b = samples[Math.min(N - 1, i + 1)];
+    const tx = b.x - a.x, tz = b.z - a.z, len = Math.hypot(tx, tz) || 1;
+    tangents.push({ x: tx / len, z: tz / len }); lefts.push({ x: tz / len, z: -tx / len });
+  }
+  RIVER_S = -1e9; RAMP_END = -1e9; RAMP_START = -1e9;
+  riverIdx = 0; riverC = samples[0]; riverT = tangents[0]; riverL = lefts[0];
+  // 空・霧（トンネル内は暗く、出口の先は夕焼けの東京湾）
+  tubeSky = add(makeSky(0x283593, 0xff7043, 0xffcc80));
+  scene.background = new THREE.Color(0x05060a);
+  scene.fog = new THREE.Fog(0x05060a, 40, 420);
+  hemiLight.color.set(0xffffff); hemiLight.groundColor.set(0x444444); hemiLight.intensity = 0.9; sun.intensity = 0.6;
+
+  // トンネル本体（自前で輪切りを並べる）
+  const RINGS = 1500, SEG = 28, pos = [], uv = [], idx = [];
+  for (let r = 0; r <= RINGS; r++) {
+    const s = r / RINGS * tube.L, F = tubeFrame(s);
+    for (let j = 0; j <= SEG; j++) {
+      const th = -Math.PI + j / SEG * Math.PI * 2;
+      const q = F.p.clone().add(F.up.clone().multiplyScalar(-Math.cos(th) * TUBE_R)).add(F.side.clone().multiplyScalar(Math.sin(th) * TUBE_R));
+      pos.push(q.x, q.y, q.z); uv.push(s / 24, j / SEG);
     }
   }
+  for (let r = 0; r < RINGS; r++) for (let j = 0; j < SEG; j++) {
+    const a = r * (SEG + 1) + j, b = a + SEG + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tubeTex, side: THREE.DoubleSide })));
+
+  // 看板（天井から下がる）
+  const sign = (s, t1, t2, bg) => {
+    const pz = tubePose(s, Math.PI, TUBE_R - 2.4);
+    const m = add(makeSign(textTexture([t1, t2], { w: 512, h: 160, bg, fg: '#ffffff', size: 70, border: '#ffffff' }), 9, 2.8));
+    m.position.copy(pz.pos);
+    m.lookAt(pz.pos.clone().sub(pz.t));
+  };
+  sign(30, '池尻JCT', 'IKEJIRI JCT', '#2e7d32');
+  sign(520, '山手トンネル', 'YAMATE TUNNEL', '#1565c0');
+  for (let k = 1; k <= 5; k++) {
+    const s = 520 + k * (tube.L - 900) / 6;
+    sign(s, `東京湾まで ${((tube.L - s) / tube.L * TUBE_KM).toFixed(1)}km`, 'TOKYO BAY', '#2e7d32');
+  }
+  sign(tube.L - 140, '東京湾 ↑', 'この先 海です', '#c62828');
+
+  // 出口の光
+  const ex = tubePose(tube.L - 1, 0, 0);
+  const glow = add(new THREE.Mesh(new THREE.CircleGeometry(TUBE_R * 0.98, 32),
+    new THREE.MeshBasicMaterial({ color: 0xfff3e0, transparent: true, opacity: 0.25, depthWrite: false, fog: false })));
+  glow.position.copy(ex.F.p); glow.lookAt(ex.F.p.clone().add(ex.t));
+
+  // 東京湾・夕景の街並み・レインボーブリッジ
+  const endP = tube.P[tube.M - 1];
+  const sea = add(new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000), new THREE.MeshBasicMaterial({ color: 0x1565c0 })));
+  sea.rotation.x = -Math.PI / 2; sea.position.set(endP.x + 2000, endP.y - 45, endP.z);
+  const shine = add(new THREE.Mesh(new THREE.PlaneGeometry(3200, 160), new THREE.MeshBasicMaterial({ color: 0xff8a50, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })));
+  shine.rotation.x = -Math.PI / 2; shine.position.set(endP.x + 2800, endP.y - 44.8, endP.z);
+  const cityMat = new THREE.MeshBasicMaterial({ color: 0x5c4a6e, map: winTexNight });
+  for (let k = 0; k < 90; k++) {
+    const w = 20 + wrng() * 40, h = 30 + wrng() * 160;
+    const x = endP.x + 900 + wrng() * 2600, z = endP.z + (k % 2 ? 1 : -1) * (600 + wrng() * 900);
+    const b = addBuilding(x, z, w, h, w, 0, cityMat); b.position.y = endP.y - 45 + h / 2;
+  }
+  const bridgeMat = new THREE.MeshBasicMaterial({ color: 0xf5f5f5 });
+  const bx = endP.x + 1700, by = endP.y - 45;
+  [-260, 260].forEach(dz => { const tw = add(new THREE.Mesh(new THREE.BoxGeometry(14, 170, 14), bridgeMat)); tw.position.set(bx, by + 85, endP.z + dz); });
+  const deck = add(new THREE.Mesh(new THREE.BoxGeometry(16, 8, 1400), bridgeMat)); deck.position.set(bx, by + 55, endP.z);
+  for (let k = -12; k <= 12; k++) {
+    const z = endP.z + k * 50, hh = 150 - Math.min(Math.abs(Math.abs(k * 50) - 260), 260) * 0.35;
+    const cb = add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({ color: 0xffe082 })));
+    cb.position.set(bx, by + Math.max(60, hh), z);
+  }
+  const sunM = add(new THREE.Mesh(new THREE.CircleGeometry(90, 32), new THREE.MeshBasicMaterial({ color: 0xffe0b2, fog: false })));
+  sunM.position.set(endP.x + 4500, endP.y + 80, endP.z); sunM.lookAt(endP);
+
+  // ブースト矢印（床→壁→天井へとぐるっと配置。取るほど最高速度が上がる）
+  tubePads = [];
+  let j = 0;
+  for (let s = 620; s < tube.L - 260; s += 105, j++) {
+    const th = 1.7 * Math.sin(j * 0.55) + (j % 6 === 5 ? Math.PI : 0);
+    const pz = tubePose(s, th, TUBE_R - 0.12);
+    const m = add(new THREE.Mesh(new THREE.PlaneGeometry(6.5, 9), padMat));
+    m.position.copy(pz.pos);
+    const x = new THREE.Vector3().crossVectors(pz.t, pz.n).normalize();
+    _m4.makeBasis(x, pz.t, pz.n); m.quaternion.setFromRotationMatrix(_m4);
+    tubePads.push({ s, th, mesh: m, got: false });
+  }
+  // ぶっ飛ばせる車（渋滞中の乗用車・トラック）
+  tubeCars = [];
+  const r = mulberry32(4242);
+  for (let k = 0; k < 120; k++) {
+    const s = 560 + r() * (tube.L - 800);
+    const roll = r(), th = roll < 0.75 ? (r() - 0.5) * 1.1 : roll < 0.93 ? (r() < 0.5 ? -1 : 1) * (1.2 + r() * 0.5) : Math.PI + (r() - 0.5) * 0.6;
+    const truck = r() < 0.25;
+    const g = new THREE.Group();
+    const col = carColors[Math.floor(r() * carColors.length)];
+    if (truck) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3, 7), new THREE.MeshLambertMaterial({ color: 0xeceff1 })); box.position.set(0, 2, -1); g.add(box);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, 2), new THREE.MeshLambertMaterial({ color: col })); cab.position.set(0, 1.5, 3.4); g.add(cab);
+    } else {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1, 4.2), new THREE.MeshLambertMaterial({ color: col })); body.position.y = 0.8; g.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 2.2), new THREE.MeshLambertMaterial({ color: 0x90caf9 })); cabin.position.set(0, 1.6, -0.2); g.add(cabin);
+    }
+    const pz = tubePose(s, th, TUBE_R - 0.05);
+    g.position.copy(pz.pos); orient(g, pz.t, pz.n);
+    add(g);
+    tubeCars.push({ id: k, s, th, len: truck ? 8 : 4.4, mesh: g, home: pz, state: 'stand', v: new THREE.Vector3(), spin: new THREE.Vector3(), t: 0, pts: truck ? 300 : 100, color: truck ? '#eceff1' : '#' + new THREE.Color(col).getHexString() });
+  }
 }
-function hitObj(o, heading, speed, scoring) {
-  if (o.state !== 'stand') return;
-  o.state = 'fly'; o.t = 0;
-  const v = Math.max(speed, 30) * (0.7 + Math.random() * 0.4);
-  const side = (Math.random() - 0.5) * 18;
-  o.vx = Math.sin(heading) * v + Math.cos(heading) * side;
-  o.vz = Math.cos(heading) * v - Math.sin(heading) * side;
-  o.vy = 10 + Math.random() * 18;
-  o.sx = (Math.random() - 0.5) * 16; o.sz = (Math.random() - 0.5) * 16;
-  FX.smash(o.x, 2, o.z, o.color);
-  if (actx) noiseHit(actx.currentTime, 0.18, 0.3, 300);
+
+// --- 状態のリセット ---
+function resetBonus() {
+  bonusScore = 0; bonusCombo = 0; comboT = 0; bonusHits = [];
+  if (!isBonus()) return;
+  ts = { th: 0, vth: 0, cap: CONFIG.TUBE_START_CAP, maxKmh: 0, smashed: 0, pads: 0, fly: null, splashT: 0, milestone: 0, dived: false };
+  karts.forEach(k => { k.tube = k.kind === 'off' ? null : { s: 24, th: 0 }; k.fly = null; });
+  camera.far = 9000; camera.updateProjectionMatrix();
+  player.speed = 25;
+  tubePads.forEach(p => { p.got = false; p.mesh.visible = true; });
+  tubeCars.forEach(c => { c.state = 'stand'; c.t = 0; c.mesh.visible = true; c.mesh.position.copy(c.home.pos); orient(c.mesh, c.home.t, c.home.n); });
+  baseFog = { color: new THREE.Color(0x05060a), near: 40, far: 420 };
+}
+const kmh = v => Math.round(v * CONFIG.SPEED_KMH_RATE);
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+
+// --- 自分のカート（トンネル内） ---
+function updateTube(dt) {
+  const p = player, T = p.tube;
+  if (!T || !ts) return;
+  if (ts.fly) { updateFly(dt); return; }
+  const ctl = state === 'race';
+  const steer = ctl ? ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) : 0;
+  const boostKey = ctl && keys.ArrowUp;
+  // 加速：自動で加速、↑でさらに加速、↓でブレーキ
+  const rate = keys.ArrowDown ? -1.5 : boostKey ? 1.1 : 0.55;
+  if (rate > 0) p.speed += Math.max(6, (ts.cap - p.speed) * rate) * dt * (p.speed < ts.cap ? 1 : 0);
+  else p.speed = Math.max(20, p.speed + rate * 40 * dt);
+  if (p.speed > ts.cap) p.speed -= (p.speed - ts.cap) * 0.8 * dt;
+  // ハンドル：トンネルの内側をぐるっと回る（←→で壁・天井へ）
+  ts.vth += (steer * 2.6 - ts.vth) * Math.min(1, dt * 8);
+  ts.th = angDiff(ts.th + ts.vth * dt, 0);
+  T.th = ts.th;
+  T.s += p.speed * dt;
+  p.prog = T.s / ds;
+  // 最高速度・記録
+  const k = kmh(p.speed);
+  if (k > ts.maxKmh) ts.maxKmh = k;
+  const marks = [500, 800, 1000, 1200];
+  while (ts.milestone < marks.length && ts.maxKmh >= marks[ts.milestone]) {
+    const m = marks[ts.milestone++];
+    banner(`${m.toLocaleString()}km/h 突破！`, m >= 1000 ? 'goal' : 'jump');
+    addShake(m >= 1000 ? 1.2 : 0.6);
+    if (m >= 1000) { fanfare([523, 659, 784, 1047, 1319, 1568, 2093], 0.08); say('せんキロ、突破！', 1.4, 1.3); flashScreen('#ffffff'); }
+    else tone(880, 0.4, 'sawtooth', 0.1, 0, 1760);
+  }
+  // ブースト矢印
+  for (const pad of tubePads) {
+    if (pad.got || Math.abs(pad.s - T.s) > 5 + p.speed * dt) continue;
+    if (Math.abs(angDiff(pad.th, ts.th)) * TUBE_R > 3.8) continue;
+    pad.got = true; pad.mesh.visible = false; ts.pads++;
+    ts.cap = Math.min(CONFIG.TUBE_MAX_CAP, ts.cap + CONFIG.TUBE_PAD_CAP);
+    p.speed += 28;
+    popText(`BOOST! 最高 ${kmh(ts.cap)}km/h`, 'up');
+    tone(500, 0.45, 'sawtooth', 0.12, 0, 1800); addShake(0.4); flashScreen('#00e5ff');
+  }
+  // 車をぶっ飛ばす（減速しない・むしろ少し加速）
+  comboT -= dt;
+  for (const c of tubeCars) {
+    if (c.state !== 'stand' || Math.abs(c.s - T.s) > c.len / 2 + 2.5 + p.speed * dt) continue;
+    if (Math.abs(angDiff(c.th, ts.th)) * TUBE_R > 3.0) continue;
+    smashCar(c, p.speed, true);
+  }
+  bonusScore = ts.smashed * 100 + ts.maxKmh * 10 + (ts.dived ? 5000 : 0);
+  // 高速時の火花
+  if (p.speed > 120 && Math.random() < 0.5) {
+    const pz = tubePose(T.s - 1, ts.th, TUBE_R - 0.3);
+    burst(pz.pos.x, pz.pos.y, pz.pos.z, 2, ['#ffd740', '#ff9100', '#ffffff'], 6, 2, 0.35, 0);
+  }
+  if (p.speed > 180) addShake(0.02 * (p.speed - 180) / 60);
+  // 出口 → 東京湾へ
+  if (T.s >= tube.L - 1) {
+    const pz = tubePose(tube.L - 1, ts.th, TUBE_R - 0.05);
+    ts.fly = { pos: pz.pos.clone(), vel: pz.t.clone().multiplyScalar(p.speed).add(new THREE.Vector3(0, 32, 0)), t: 0 };
+    p.fly = ts.fly.pos;
+    baseFog = { color: new THREE.Color(0xffab91), near: 400, far: 6000 };
+    banner('東京湾へ！', 'jump'); say('とうきょうわんへ、ダイブ！', 1.3, 1.3); tone(300, 1.2, 'sawtooth', 0.1, 0, 1200);
+  }
+}
+function updateFly(dt) {
+  const p = player, f = ts.fly;
+  const seaY = tube.P[tube.M - 1].y - 45;
+  if (ts.splashT > 0) {
+    ts.splashT -= dt; f.pos.y = Math.max(seaY - 4, f.pos.y - dt * 3);
+    if (ts.splashT <= 0 && !p.finished) finishBonus();
+    return;
+  }
+  f.t += dt;
+  f.vel.y -= 40 * dt;
+  f.pos.addScaledVector(f.vel, dt);
+  p.speed = f.vel.length();
+  if (f.pos.y <= seaY || f.t > 9) {
+    f.pos.y = seaY; ts.dived = true; ts.splashT = 2.6;
+    bonusScore = ts.smashed * 100 + ts.maxKmh * 10 + 5000;
+    for (let k = 0; k < 5; k++) burst(f.pos.x + (Math.random() - 0.5) * 6, seaY + 0.5, f.pos.z + (Math.random() - 0.5) * 6, 60, ['#4fc3f7', '#e1f5fe', '#ffffff'], 16, 40, 2.2, 30);
+    banner('東京湾に ダイブ！', 'splash'); addShake(1.5);
+    if (actx) { noiseHit(actx.currentTime, 1.2, 0.4, 300); tone(160, 1, 'triangle', 0.2, 0, 50); }
+    popText('+5,000 ダイブボーナス', 'up');
+  }
+}
+function smashCar(c, speed, scoring, headingT) {
+  if (c.state !== 'stand') return;
+  c.state = 'fly'; c.t = 0;
+  const pz = tubePose(c.s, c.th, TUBE_R - 0.05);
+  c.v.copy(pz.t).multiplyScalar(Math.max(60, speed) * (0.6 + Math.random() * 0.4))
+    .addScaledVector(pz.n, 14 + Math.random() * 18)
+    .add(new THREE.Vector3((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16));
+  c.spin.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+  FX.smash(pz.pos.x, pz.pos.y, pz.pos.z, c.color);
+  burst(pz.pos.x, pz.pos.y, pz.pos.z, 18, ['#ffd740', '#ff5252', '#ffffff'], 18, 12, 0.8, 10);
+  if (actx) noiseHit(actx.currentTime, 0.22, 0.32, 250);
   if (!scoring) return;
-  bonusCombo = comboT > 0 ? bonusCombo + 1 : 1; comboT = 1.6;
-  const gain = o.pts * Math.min(10, bonusCombo);
-  bonusScore += gain;
-  bonusHits.push(o.id);
+  ts.smashed++; bonusHits.push(c.id);
+  bonusCombo = comboT > 0 ? bonusCombo + 1 : 1; comboT = 1.5;
+  player.speed += 3;
   addShake(0.25);
-  tone(300 + Math.min(10, bonusCombo) * 80, 0.12, 'square', 0.08);
-  if (bonusCombo >= 3) popText(`${bonusCombo} COMBO! +${gain}`, 'up');
+  tone(300 + Math.min(12, bonusCombo) * 70, 0.1, 'square', 0.08);
+  if (bonusCombo >= 3) popText(`${bonusCombo} 台ぶっ飛ばし！`, 'up');
 }
 function updateBonusObjs(dt) {
   if (!isBonus()) return;
-  comboT -= dt;
-  for (const o of bonusObjs) {
-    if (o.state !== 'fly') continue;
-    o.t += dt;
-    o.vy -= 30 * dt;
-    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
-    if (o.y < o.base * 0.3) { o.y = o.base * 0.3; o.vy *= -0.35; o.vx *= 0.6; o.vz *= 0.6; o.sx *= 0.6; o.sz *= 0.6; }
-    o.holder.position.set(o.x, o.y, o.z);
-    o.holder.rotation.x += o.sx * dt; o.holder.rotation.z += o.sz * dt;
-    if (o.t > 5) o.state = 'rest';
+  if (tubeSky) tubeSky.position.copy(camera.position);     // 空はいつもカメラの周りに
+  for (const c of tubeCars) {
+    if (c.state !== 'fly') continue;
+    c.t += dt;
+    c.mesh.position.addScaledVector(c.v, dt);
+    c.v.y -= 20 * dt;
+    c.mesh.rotation.x += c.spin.x * dt; c.mesh.rotation.y += c.spin.y * dt; c.mesh.rotation.z += c.spin.z * dt;
+    if (c.t > 2.5) { c.state = 'gone'; c.mesh.visible = false; }
   }
 }
-// 自分のカートとの衝突（近くのものだけ調べる）
-function bonusCollide() {
-  const p = player;
-  if (!isBonus() || p.kind !== 'local' || state !== 'race') return;
-  for (const o of bonusObjs) {
-    if (o.state !== 'stand') continue;
-    let di = Math.abs(o.idx - p.idx); di = Math.min(di, N - di);
-    if (di > 12) continue;
-    if (Math.hypot(o.x - p.pos.x, o.z - p.pos.z) < o.rad + 1.8 && p.y < o.h) hitObj(o, p.heading, p.speed, true);
-  }
-}
-// 観戦側：優勝者の画面で壊れたものを再現
+function bonusCollide() { /* トンネル内の当たり判定は updateTube で行う */ }
+// 観戦側：優勝者の画面でぶっ飛ばした車を再現
 function applyBonusHits(n) {
   if (!n || !n.hits || !isBonus()) return;
-  const hits = toArr(n.hits);
-  for (const id of hits) { const o = bonusObjs[id]; if (o && o.state === 'stand') hitObj(o, n.h, n.sp, false); }
+  toArr(n.hits).forEach(id => { const c = tubeCars[id]; if (c && c.state === 'stand') smashCar(c, n.sp || 100, false); });
+  toArr(n.pads || []).forEach(i => { const p = tubePads[i]; if (p && !p.got) { p.got = true; p.mesh.visible = false; } });
 }
-function resetBonus() {
-  bonusScore = 0; bonusCombo = 0; comboT = 0; bonusHits = [];
-  if (isBonus()) buildBonusObjects();
+// --- カートの置き方・カメラ ---
+function placeKartTube(k) {
+  const g = k.model.group;
+  if (k.fly) {
+    g.position.copy(k.fly);
+    const fwd = ts && k.kind === 'local' && ts.fly ? ts.fly.vel.clone().normalize() : tube.T[tube.M - 1].clone();
+    orient(g, fwd, new THREE.Vector3(0, 1, 0));
+    return;
+  }
+  const pz = tubePose(k.tube.s, k.tube.th, TUBE_R - 0.05);
+  g.position.copy(pz.pos);
+  orient(g, pz.t, pz.n);
 }
+function tubeCam(cam, k, dt, snap) {
+  let target, look, up;
+  if (k.fly) {
+    const fwd = ts && ts.fly && k.kind === 'local' ? ts.fly.vel.clone().normalize() : tube.T[tube.M - 1].clone();
+    fwd.y = Math.max(-0.4, fwd.y * 0.5); fwd.normalize();
+    target = k.fly.clone().addScaledVector(fwd, -22).add(new THREE.Vector3(0, 9, 0));
+    look = k.fly.clone().addScaledVector(fwd, 30);
+    up = new THREE.Vector3(0, 1, 0);
+  } else {
+    // カメラもトンネルの中心線に沿って後ろに置く（カーブで壁の外に出ないように）
+    const back = 10 + Math.min(8, k.speed / 40);
+    const cp = tubePose(Math.max(0, k.tube.s - back), k.tube.th, TUBE_R - 4.4);
+    const lp = tubePose(Math.min(tube.L - 1, k.tube.s + 14), k.tube.th, TUBE_R - 1.9);
+    target = cp.pos; look = lp.pos;
+    up = tubePose(k.tube.s, k.tube.th, TUBE_R).n;
+  }
+  if (snap) cam.position.copy(target); else cam.position.lerp(target, 1 - Math.pow(0.000002, dt));
+  if (shake > 0.01 && cam === camera) cam.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
+  cam.up.lerp(up, snap ? 1 : Math.min(1, dt * 8)).normalize();
+  cam.lookAt(look);
+  const fov = Math.min(118, 70 + Math.max(0, k.speed) * 0.16);
+  if (Math.abs(cam.fov - fov) > 0.1) { cam.fov += (fov - cam.fov) * 0.08; cam.updateProjectionMatrix(); }
+}
+// 画面のフラッシュ（ブースト・1000km/h突破）
+const flashEl = document.createElement('div');
+flashEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;transition:opacity .35s;';
+document.body.appendChild(flashEl);
+function flashScreen(color) {
+  flashEl.style.transition = 'none'; flashEl.style.background = color; flashEl.style.opacity = 0.55;
+  requestAnimationFrame(() => { flashEl.style.transition = 'opacity .45s'; flashEl.style.opacity = 0; });
+}
+// --- 画面上部の表示 ---
 function updateBonusHud() {
   const el = $('bonusHud');
-  if (!isBonus() || !(mode === 'solo' || mode === 'net' || mode === 'spec') || state === 'results') { el.classList.add('hidden'); return; }
+  if (!isBonus() || !(mode === 'solo' || mode === 'net' || mode === 'spec') || state === 'results' || !tube) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
-  let score = bonusScore, combo = comboT > 0 ? bonusCombo : 0;
-  if (mode === 'spec' && specSlots[0] && specSlots[0].net) { score = specSlots[0].net.score || 0; combo = specSlots[0].net.combo || 0; }
-  const left = Math.max(0, CONFIG.BONUS_SECONDS - raceTime);
-  const html = `<div class="bl">BONUS STAGE</div><div class="bs">${score.toLocaleString()}<small>点</small></div>
-    <div class="bt">のこり ${state === 'countdown' ? CONFIG.BONUS_SECONDS : left.toFixed(1)} 秒</div>${combo >= 2 ? `<div class="bc">${combo} COMBO</div>` : ''}`;
+  let k = player, sp = player.speed, maxK = ts ? ts.maxKmh : 0, sm = ts ? ts.smashed : 0, s = player.tube ? player.tube.s : 0, score = bonusScore, cap = ts ? ts.cap : 0;
+  if (mode === 'spec' && specSlots[0]) {
+    k = specSlots[0]; const n = k.net || {};
+    sp = k.speed; maxK = n.maxk || 0; sm = n.smashed || 0; s = k.tube ? k.tube.s : 0; score = n.score || 0; cap = 0;
+  }
+  const left = Math.max(0, (tube.L - s) / tube.L * TUBE_KM);
+  const html = `<div class="bl">山手トンネル BONUS STAGE</div><div class="bs">${kmh(sp).toLocaleString()}<small>km/h</small></div>
+    <div class="bt">最高 ${maxK.toLocaleString()}km/h ／ ぶっ飛ばし ${sm}台 ／ ${left > 0.05 ? `東京湾まで ${left.toFixed(1)}km` : '東京湾！'}</div>
+    <div class="bt">スコア ${score.toLocaleString()}点${cap ? `　（今の上限 ${kmh(cap)}km/h）` : ''}</div>`;
   if (el._h !== html) { el.innerHTML = html; el._h = html; }
 }
 
@@ -3928,9 +4234,9 @@ function tourProgressHTML(R) {
 }
 function bonusIntroHTML(R) {
   const who = raceInfo(R, toArr(R.m)[0]);
-  return `<div class="tp"><div class="tpHead">👑 優勝者ボーナスステージ 👑</div>
-    <div class="tpSub" style="font-size:22px"><b>${esc(who.name)}</b> さん、30秒間ひたすら飛ばして<br>巨大ピン・箱・コーンをなぎ倒せ！ 連続で壊すとコンボで得点アップ</div>
-    <div class="tpSub">青い矢印でブースト／ジャンプ台でビッグジャンプ</div></div>`;
+  return `<div class="tp"><div class="tpHead">👑 優勝者ボーナスステージ「山手トンネル」 👑</div>
+    <div class="tpSub" style="font-size:21px"><b>${esc(who.name)}</b> さん、池尻JCTのぐるぐるからスタート！<br>円いトンネルは <b>壁も天井も走れる</b>。青い矢印を取るほど最高速度アップ、<b>1,000km/h超え</b>を目指せ！</div>
+    <div class="tpSub">渋滞の車はぶっ飛ばして得点。最後は出口から <b>東京湾にダイブ</b>！（ぐるぐるはまっすぐ走ればOK）</div></div>`;
 }
 let preA = '', preB = '';
 function setPreRace(R) {
@@ -4023,7 +4329,7 @@ function update(dt) {
   updatePreRace();
   updateBonusHud();
   const me = (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished') ? player : null;
-  drawSpeedLines(me ? Math.max(0, (me.speed / me.maxSpeed - 0.8) * 4) * (isBonus() ? 1.4 : 0.8) + (me.boost > 0 ? 0.6 : 0) + (me.airborne ? 0.3 : 0) : 0);
+  drawSpeedLines(me && isBonus() ? Math.min(1.8, Math.max(0, (me.speed - 45) / 100)) : me ? Math.max(0, (me.speed / me.maxSpeed - 0.8) * 4) * (isBonus() ? 1.4 : 0.8) + (me.boost > 0 ? 0.6 : 0) + (me.airborne ? 0.3 : 0) : 0);
   if (role === 'admin' && raceActive()) { adminRenderT -= dt; if (adminRenderT <= 0) { adminRenderT = 0.5; renderAdmin(); } }
 }
 
@@ -4032,7 +4338,7 @@ applyStats(player, DEFAULT_STATS);
 karts.forEach((k, i) => resetKart(k, GRID[i]));
 // 動作確認用（ブラウザのコンソールから状態を見られる）
 window.MASAO_DEBUG = { player, cpus, karts, Net, Admin, buildCourse, get samples() { return samples; }, get tangents() { return tangents; },
-  get bonusScore() { return bonusScore; }, get courseId() { return courseId; },
+  get bonusScore() { return bonusScore; }, get courseId() { return courseId; }, get ts() { return ts; }, get tube() { return tube; }, camera, get specSlots() { return specSlots; }, get tubePads() { return tubePads; },
   useItem, get projs() { return projs; }, get traps() { return traps; }, get barriers() { return barriers; }, get itemBoxes() { return itemBoxes; },
   get state() { return state; }, get mode() { return mode; }, get raceTime() { return raceTime; }, get role() { return role; } };
 
