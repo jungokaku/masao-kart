@@ -24,6 +24,13 @@
     box-shadow: 0 4px 12px rgba(0,0,0,.35); }
   #touchPad .tb.on { background: rgba(255,255,255,.5); color: #111; transform: scale(.94); }
   #touchPad .steerL { left: calc(16px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 92px; height: 92px; font-size: 34px; }
+  body.tiltMode #touchPad .steerL, body.tiltMode #touchPad .steerR { display: none; }
+  #tiltMeter { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: 220px; height: 34px; pointer-events: none;
+    background: rgba(0,0,0,.5); border-radius: 17px; border: 2px solid rgba(255,255,255,.7); }
+  #tiltMeter .bar { position: absolute; left: 14px; right: 14px; top: 12px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #4fc3f7, rgba(255,255,255,.6) 50%, #4fc3f7); }
+  #tiltMeter .mid { position: absolute; left: 50%; top: 8px; width: 2px; height: 18px; background: rgba(255,255,255,.7); }
+  #tiltMeter .knob { position: absolute; top: 5px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%; background: #ffd54f; border: 3px solid #fff; left: 50%; }
+  #tiltMeter .gas { position: absolute; right: -58px; top: 6px; font: 900 12px 'M PLUS Rounded 1c', sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
   #touchPad .steerR { left: calc(124px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 92px; height: 92px; font-size: 34px; }
   #touchPad .gas { right: calc(16px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 104px; height: 104px; background: rgba(46,125,50,.6); }
   #touchPad .brake { right: calc(132px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); width: 78px; height: 78px; background: rgba(198,40,40,.55); font-size: 15px; }
@@ -429,6 +436,10 @@
         <option value="on">操作ボタン：表示</option>
         <option value="off">操作ボタン：非表示</option>
       </select>
+      <select id="ctrlSel" class="courseSel">
+        <option value="tilt">ハンドル：傾き</option>
+        <option value="button">ハンドル：ボタン</option>
+      </select>
       <button class="btn gray small hidden" id="fsBtn">⛶ 全画面</button>
     </div>
     <div class="btns">
@@ -519,7 +530,10 @@
 
       <h3>スマホで遊ぶとき</h3>
       <ul>
-        <li>スマホは<b>横向き</b>で持ちます。左下の <b>◀ ▶</b> でハンドル、右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b></li>
+        <li>スマホは<b>横向き</b>で持ちます。<b>ハンドル：傾き</b>（初期設定）なら、スマホをハンドルのように左右に回すと曲がります。画面下のメーターで今の傾きが分かります</li>
+        <li>右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b>。自動アクセルOFFにすると、<b>前に倒してアクセル・手前に倒してブレーキ</b></li>
+        <li>レース開始時の持ち方が「まっすぐ」の基準になります。ずれたら画面左の「傾き補正」。iPhoneでは最初に「動きと画面の向き」の許可を求められるので「許可」を押してください</li>
+        <li>傾きが苦手な人は、タイトル画面で <b>ハンドル：ボタン</b> にすると ◀ ▶ ボタンで操作できます</li>
         <li>最初は <b>自動アクセル</b>（押さなくても進む）。画面左の「自動アクセル」を押すと、アクセルボタンで自分で踏むモードに切り替わります</li>
         <li>Androidはタイトル画面の「全画面」で広く使えます。iPhoneは「ホーム画面に追加」から開くと広く使えます</li>
         <li>カクつくときはタイトル画面の「画質：低（軽い）」を選んでください</li>
@@ -639,8 +653,10 @@
     <button class="tbs" data-act="auto" id="autoGasBtn">自動アクセル</button>
     <button class="tbs" data-act="pause" id="padPause">⏸ 一時停止</button>
     <button class="tbs" data-act="mute" id="padMute">🔊 音</button>
+    <button class="tbs" data-act="calib" id="padCalib">📱 傾き補正</button>
   </div>
 </div>
+<div id="tiltMeterWrap"></div>
 <div id="rotateMsg" class="hidden"><div class="big">📱↻</div>スマホを横向きにしてください</div>
 
 <div id="pause" class="overlay hidden">
@@ -1999,7 +2015,7 @@ function updatePlayer(dt) {
   const stunned = p.parkT > 0 || p.spinT > 0;          // 駐車中・スピン中は操作できない
   const ctl = state === 'race' && !p.finished && !stunned;
   const up = ctl && keys.ArrowUp, down = ctl && keys.ArrowDown;
-  const steer = ctl ? ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) : 0;
+  const steer = ctl ? steerInput() : 0;
 
   if (!p.airborne) {
     const onRoad = Math.abs(p.lat) <= hw + 1.2;
@@ -2024,6 +2040,7 @@ function updatePlayer(dt) {
     }
     if (p.speed > maxSp) p.speed = Math.max(maxSp, p.speed - 30 * dt);
     if (p.speed < -10) p.speed = -10;
+    if (noReverse && p.speed < 0) p.speed = 0;      // 傾きブレーキではバックしない
     const tf = Math.min(1, Math.abs(p.speed) / 8) * Math.sign(p.speed);
     p.heading += steer * p.turnRate * tf * dt;
     // カーブでハンドルを切ると少し減速（安定感が高いほど減速しにくい）
@@ -3589,7 +3606,7 @@ function updateTube(dt) {
   if (!T || !ts) return;
   if (ts.fly) { updateFly(dt); return; }
   const ctl = state === 'race';
-  const steer = ctl ? ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) : 0;
+  const steer = ctl ? steerInput() : 0;
   const boostKey = ctl && keys.ArrowUp;
   // 加速：自動で加速、↑でさらに加速、↓でブレーキ
   const rate = keys.ArrowDown ? -1.5 : boostKey ? 1.1 : 0.55;
@@ -4395,8 +4412,70 @@ padEl.querySelectorAll('[data-act]').forEach(b => {
     else if (a === 'auto') setAutoGas(!autoGas);
     else if (a === 'pause') togglePause();
     else if (a === 'mute') setMuted(!muted);
+    else if (a === 'calib') { tilt.pitch0 = tilt.pitch; toast('今の持ち方をまっすぐ・基準にしました'); }
   });
 });
+// ---- 傾きハンドル（横持ちでハンドルのように回す／前に倒すとアクセル） ----
+const ctrlPref = () => store.get('ctrl') || 'tilt';
+const tilt = { steer: 0, pitch: 0, pitch0: null, last: 0, asked: false, denied: false };
+const TILT_MAX = 28, TILT_DEAD = 3;            // 何度傾けるとハンドルいっぱいか／遊び
+function onOrientation(e) {
+  if (e.beta == null || e.gamma == null) return;
+  const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
+  // 端末から見た「下」の向き
+  const dx = Math.sin(g) * Math.cos(b), dy = -Math.sin(b), dz = -Math.cos(g) * Math.cos(b);
+  const ang = ((screen.orientation && screen.orientation.angle) != null ? screen.orientation.angle : (window.orientation || 0)) * Math.PI / 180;
+  const sx = dx * Math.cos(ang) - dy * Math.sin(ang), sy = dx * Math.sin(ang) + dy * Math.cos(ang);
+  let wheel = Math.atan2(sx, -sy) * 180 / Math.PI;                    // ハンドルの回転角（右に回すとプラス）
+  const pitch = Math.atan2(dz, Math.hypot(sx, sy)) * 180 / Math.PI;   // 手前・奥への傾き
+  const mag = Math.max(0, Math.abs(wheel) - TILT_DEAD) / (TILT_MAX - TILT_DEAD);
+  const target = -Math.sign(wheel) * Math.min(1, mag);
+  if (!tilt.last) { tilt.steer = target; tilt.pitch = pitch; }      // 最初の1回はそのまま使う
+  tilt.steer += (target - tilt.steer) * 0.5;
+  tilt.pitch += (pitch - tilt.pitch) * 0.3;
+  if (tilt.pitch0 == null) tilt.pitch0 = tilt.pitch;
+  tilt.last = performance.now();
+}
+window.addEventListener('deviceorientation', onOrientation);
+async function askTilt() {             // iPhone は画面を触ったときに許可を求める必要がある
+  if (tilt.asked || ctrlPref() !== 'tilt' || !IS_TOUCH) return;
+  tilt.asked = true;
+  try {
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') { tilt.denied = true; toast('動きセンサーが許可されなかったため、ボタン操作にします'); }
+    }
+  } catch (e) { tilt.asked = false; }
+}
+window.addEventListener('pointerdown', askTilt);
+const tiltActive = () => touchOn() && ctrlPref() === 'tilt' && !tilt.denied && performance.now() - tilt.last < 1000;
+function steerInput() {
+  if (tiltActive() && player.kind === 'local') {
+    const k = (keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0);   // キーボードを使った場合はそちらを優先
+    return k || tilt.steer;
+  }
+  return (keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0);
+}
+const forwardTilt = () => tilt.pitch0 == null ? 0 : tilt.pitch0 - tilt.pitch;   // ＋＝前に倒した
+let tiltMeter = null, noReverse = false;
+function updateTiltUI(show) {
+  const on = show && tiltActive();
+  document.body.classList.toggle('tiltMode', on);
+  if (on && !tiltMeter) {
+    tiltMeter = document.createElement('div'); tiltMeter.id = 'tiltMeter';
+    tiltMeter.innerHTML = '<div class="bar"></div><div class="mid"></div><div class="knob"></div><div class="gas"></div>';
+    padEl.appendChild(tiltMeter);
+  }
+  if (tiltMeter) tiltMeter.style.display = on ? '' : 'none';
+  $('padCalib').style.display = on ? '' : 'none';
+  if (!on) return;
+  // スタート直前（カウントダウン中）の持ち方を「まっすぐ」の基準にする
+  if (state === 'countdown') tilt.pitch0 = tilt.pitch;
+  tiltMeter.querySelector('.knob').style.left = (50 - tilt.steer * 50) + '%';
+  const f = forwardTilt();
+  tiltMeter.querySelector('.gas').textContent = autoGas ? '' : f > 10 ? 'アクセル' : f < -12 ? 'ブレーキ' : '';
+}
+
 let padShown = false, padItemKey = '';
 function updateTouchPad() {
   const show = touchOn() && (mode === 'solo' || mode === 'net') && (state === 'countdown' || state === 'race' || state === 'finished');
@@ -4405,9 +4484,16 @@ function updateTouchPad() {
     if (!show) { ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].forEach(k => { if (touchKeys[k]) { touchKeys[k] = false; keys[k] = false; } }); padEl.querySelectorAll('.on').forEach(x => x.classList.remove('on')); }
   }
   $('rotateMsg').classList.toggle('hidden', !(show && IS_MOBILE && window.innerHeight > window.innerWidth));
-  if (!show) return;
+  if (!show) { updateTiltUI(false); noReverse = false; return; }
   // 自動アクセル：ブレーキを押していない間はアクセル
+  updateTiltUI(show);
   if (autoGas) keys.ArrowUp = state === 'race' && !touchKeys.ArrowDown;
+  else if (tiltActive()) {             // 自動アクセルOFF：前に倒すとアクセル、手前に倒すとブレーキ
+    const f = forwardTilt();
+    keys.ArrowUp = state === 'race' && (f > 10 || !!touchKeys.ArrowUp);
+    keys.ArrowDown = !!touchKeys.ArrowDown || (state === 'race' && f < -12);
+    noReverse = !touchKeys.ArrowDown;
+  } else noReverse = false;
   $('padPause').style.display = mode === 'solo' ? '' : 'none';
   $('padMute').textContent = muted ? '🔇 音' : '🔊 音';
   // アイテムボタンに持っているアイテムを表示
@@ -4429,6 +4515,13 @@ $('qualitySel').addEventListener('change', e => {
   setTimeout(() => location.reload(), 700);
 });
 $('touchSel').value = touchPref();
+$('ctrlSel').value = ctrlPref();
+if (!IS_TOUCH) $('ctrlSel').classList.add('hidden');
+$('ctrlSel').addEventListener('change', e => {
+  store.set('ctrl', e.target.value);
+  tilt.asked = false; tilt.denied = false;
+  if (e.target.value === 'tilt') { askTilt(); toast('スマホを横に持って、ハンドルのように回すと曲がります'); }
+});
 $('touchSel').addEventListener('change', e => store.set('touchui', e.target.value));
 const fsOK = IS_TOUCH && document.documentElement.requestFullscreen && !document.fullscreenElement;
 if (fsOK) $('fsBtn').classList.remove('hidden');
@@ -4523,7 +4616,7 @@ buildCourse('gotanda');
 applyStats(player, DEFAULT_STATS);
 karts.forEach((k, i) => resetKart(k, GRID[i]));
 // 動作確認用（ブラウザのコンソールから状態を見られる）
-window.MASAO_DEBUG = { player, cpus, karts, Net, Admin, buildCourse, get samples() { return samples; }, get tangents() { return tangents; },
+window.MASAO_DEBUG = { tilt, player, cpus, karts, Net, Admin, buildCourse, get samples() { return samples; }, get tangents() { return tangents; },
   get bonusScore() { return bonusScore; }, get courseId() { return courseId; }, get ts() { return ts; }, get tube() { return tube; }, camera, get specSlots() { return specSlots; }, get tubePads() { return tubePads; },
   useItem, get projs() { return projs; }, get traps() { return traps; }, get barriers() { return barriers; }, get itemBoxes() { return itemBoxes; },
   get state() { return state; }, get mode() { return mode; }, get raceTime() { return raceTime; }, get role() { return role; } };
