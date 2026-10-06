@@ -445,6 +445,10 @@
         <option value="tilt">ハンドル：傾き</option>
         <option value="button">ハンドル：ボタン</option>
       </select>
+      <select id="steerAssistSel" class="courseSel hidden">
+        <option value="on">おたすけハンドル：ON</option>
+        <option value="off">おたすけハンドル：OFF</option>
+      </select>
       <button class="btn gray small hidden" id="fsBtn">⛶ 全画面</button>
       <button class="btn gray small hidden" id="tiltTestBtn">📱 傾きテスト</button>
     </div>
@@ -539,7 +543,7 @@
         <li>スマホは<b>横向き</b>で持ちます。<b>ハンドル：傾き</b>（初期設定）なら、スマホをハンドルのように左右に回すと曲がります。画面下のメーターで今の傾きが分かります</li>
         <li>右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b>。自動アクセルOFFにすると、<b>前に倒してアクセル・手前に倒してブレーキ</b></li>
         <li>レース開始時の持ち方が「まっすぐ」の基準になります。ずれたら画面左の「傾き補正」。iPhoneでは最初に「動きと画面の向き」の許可を求められるので「許可」を押してください</li>
-        <li>曲がらないときは、タイトル画面の「📱 傾きテスト」で、センサーが動いているか確認できます。大きく回すとスマホが画面を縦にしてしまうので、曲がりすぎるときは「感度：低」、回しすぎて画面が縦になるときは「感度：高」にしてください</li>
+        <li>曲がらないときは、タイトル画面の「📱 傾きテスト」で、センサーが動いているか確認できます。大きく回すとスマホが画面を縦にしてしまうので、標準は「感度：とても低い」。スマホでは「おたすけハンドル」（何もしなくても道にそって走る）も標準でONです</li>
         <li>傾きが苦手な人は、タイトル画面で <b>ハンドル：ボタン</b> にすると ◀ ▶ ボタンで操作できます</li>
         <li>最初は <b>自動アクセル</b>（押さなくても進む）。画面左の「自動アクセル」を押すと、アクセルボタンで自分で踏むモードに切り替わります</li>
         <li>Androidはタイトル画面の「全画面」で広く使えます。iPhoneは「ホーム画面に追加」から開くと広く使えます</li>
@@ -673,7 +677,7 @@
   <div id="ttDiag" class="note" style="font-size:12px;opacity:.85"></div>
   <div class="btns">
     <select id="sensSel" class="courseSel">
-      <option value="xlow">感度：とても低い（ゆったり）</option>
+      <option value="xlow">感度：とても低い（おすすめ）</option>
       <option value="low">感度：低（大きく回す）</option>
       <option value="mid">感度：ふつう</option>
       <option value="high">感度：高（少し回すだけ）</option>
@@ -682,7 +686,7 @@
     <button class="btn gray small" id="ttCalib">今の持ち方を「まっすぐ」に</button>
     <button class="btn small" id="ttClose">とじる</button>
   </div>
-  <div class="note">横向きに持ち、ハンドルのように左右に回すと黄色い丸が動けばOKです。曲がりすぎるときは「感度：低」、回しすぎて画面が縦になるときは「感度：高」にしてください。</div>
+  <div class="note">横向きに持ち、ハンドルのように左右に回すと黄色い丸が動けばOKです。「おたすけハンドル ON」＋「感度：とても低い」がおすすめです（はじめから この設定です）。</div>
 </div></div>
 
 <div id="pause" class="overlay hidden">
@@ -735,6 +739,7 @@ const CONFIG = {
   CPU_LEVEL: 'normal',      // CPUの強さの初期値（easy / normal / hard / oni）
   ITEMS: true,              // アイテム・障害物を使う（false で無し）
   PARK_SECONDS: 3,          // PARK24 で駐車させる秒数
+  STEER_ASSIST: true,       // スマホのおたすけハンドル（手を離すと道の向きにそって走る）の初期値
   CATCHUP: 0.05,            // 追い上げ補正：最下位は最高速度が最大5%アップ（0で無効）
   TUBE_START_CAP: 110,      // 山手トンネル：最初の最高速度（×4でkm/h表示＝440km/h）
   TUBE_PAD_CAP: 11,         // 山手トンネル：ブースト矢印1つで上がる最高速度（＋44km/h）
@@ -2069,6 +2074,12 @@ function updatePlayer(dt) {
     if (noReverse && p.speed < 0) p.speed = 0;      // 傾きブレーキではバックしない
     const tf = Math.min(1, Math.abs(p.speed) / 8) * Math.sign(p.speed);
     p.heading += steer * p.turnRate * tf * dt;
+    // おたすけハンドル（スマホ操作のとき）：道の向きと真ん中へ、すこしずつ向きを直す（ハンドルを切っている間は弱め）
+    if (steerAssistOn() && ctl && p.speed > 2) {
+      const want = headingAt(p.idx) - Math.max(-1, Math.min(1, p.lat / hw)) * 0.4;
+      const d = Math.atan2(Math.sin(want - p.heading), Math.cos(want - p.heading));
+      p.heading += d * (Math.abs(steer) < 0.15 ? 1.8 : 0.5) * dt;
+    }
     // カーブでハンドルを切ると少し減速（安定感が高いほど減速しにくい）
     if (steer && p.speed > 15) p.speed -= Math.abs(steer) * p.speed * p.cornerDrag * (p.speed / p.maxSpeed) * dt;
   } else {
@@ -4441,11 +4452,19 @@ padEl.querySelectorAll('[data-act]').forEach(b => {
     else if (a === 'calib') { calibrateTilt(); toast('今の持ち方を「まっすぐ」にしました'); }
   });
 });
+// ---- おたすけハンドル（スマホ操作のときだけ効く） ----
+let steerAssist = store.get('steerAssist') != null ? store.get('steerAssist') : CONFIG.STEER_ASSIST;
+const steerAssistOn = () => steerAssist && touchOn() && !keys.ArrowLeft && !keys.ArrowRight;
+if ($('steerAssistSel')) {
+  $('steerAssistSel').classList.toggle('hidden', !IS_TOUCH);
+  $('steerAssistSel').value = steerAssist ? 'on' : 'off';
+  $('steerAssistSel').addEventListener('change', e => { steerAssist = e.target.value === 'on'; store.set('steerAssist', steerAssist); });
+}
 // ---- 傾きハンドル（横持ちでハンドルのように回す／前に倒すとアクセル） ----
 const ctrlPref = () => store.get('ctrl') || 'tilt';
 // 感度：何度回すとハンドルいっぱいか（小さいほど少し回すだけで曲がる。大きく回すと画面が縦に回ってしまうため）
 const SENS = { xlow: 40, low: 30, mid: 20, high: 13 };
-const sensPref = () => store.get('tiltSens') || 'mid';
+const sensPref = () => store.get('tiltSensB') || 'xlow';   // 標準は「とても低い」（以前の設定はリセット）
 const TILT_DEAD = 2.5;
 const TILT_EXPO = 1.7;   // 1より大きいほど、少しの傾きではゆるく曲がる（大きく回したときだけ鋭く曲がる）
 const tilt = { steer: 0, wheel: 0, wheel0: 0, pitch: 0, pitch0: null, last: 0, asked: false, denied: false, refAng: null, raw: {} };
@@ -4561,7 +4580,7 @@ function openTiltTest() {
   $('sensSel').value = sensPref();
   setTimeout(() => { if (tilt.last) calibrateTilt(); }, 300);
 }
-const TILT_VER = '10/06c';
+const TILT_VER = '10/07';
 function tiltEnv() {
   const ua = navigator.userAgent;
   const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -4647,7 +4666,7 @@ $('ttAllow').addEventListener('click', () => {
 });
 $('ttCalib').addEventListener('click', () => { calibrateTilt(); toast('今の持ち方を「まっすぐ」にしました'); });
 $('ttClose').addEventListener('click', () => { tiltTestOpen = false; $('tiltTest').classList.add('hidden'); });
-$('sensSel').addEventListener('change', e => store.set('tiltSens', e.target.value));
+$('sensSel').addEventListener('change', e => store.set('tiltSensB', e.target.value));
 $('ctrlSel').addEventListener('change', e => {
   store.set('ctrl', e.target.value);
   tilt.asked = false; tilt.denied = false;
