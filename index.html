@@ -539,7 +539,7 @@
         <li>スマホは<b>横向き</b>で持ちます。<b>ハンドル：傾き</b>（初期設定）なら、スマホをハンドルのように左右に回すと曲がります。画面下のメーターで今の傾きが分かります</li>
         <li>右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b>。自動アクセルOFFにすると、<b>前に倒してアクセル・手前に倒してブレーキ</b></li>
         <li>レース開始時の持ち方が「まっすぐ」の基準になります。ずれたら画面左の「傾き補正」。iPhoneでは最初に「動きと画面の向き」の許可を求められるので「許可」を押してください</li>
-        <li>曲がらないときは、タイトル画面の「📱 傾きテスト」で、センサーが動いているか確認できます。大きく回すとスマホが画面を縦にしてしまうので、少し回すだけで曲がる「感度：高」がおすすめです</li>
+        <li>曲がらないときは、タイトル画面の「📱 傾きテスト」で、センサーが動いているか確認できます。大きく回すとスマホが画面を縦にしてしまうので、曲がりすぎるときは「感度：低」、回しすぎて画面が縦になるときは「感度：高」にしてください</li>
         <li>傾きが苦手な人は、タイトル画面で <b>ハンドル：ボタン</b> にすると ◀ ▶ ボタンで操作できます</li>
         <li>最初は <b>自動アクセル</b>（押さなくても進む）。画面左の「自動アクセル」を押すと、アクセルボタンで自分で踏むモードに切り替わります</li>
         <li>Androidはタイトル画面の「全画面」で広く使えます。iPhoneは「ホーム画面に追加」から開くと広く使えます</li>
@@ -664,14 +664,16 @@
   </div>
 </div>
 <div id="tiltMeterWrap"></div>
-<div id="rotateMsg" class="hidden"><div class="big">📱↻</div>画面が縦になりました。横向きに戻してください<div style="font-size:14px;font-weight:700;max-width:80vw">大きく回しすぎると、スマホが自動で画面を縦にしてしまいます。<br>少し回すだけで曲がります（タイトル画面の「傾きテスト」で感度を上げられます）</div></div>
+<div id="rotateMsg" class="hidden"><div class="big">📱↻</div>画面が縦になりました。横向きに戻してください<div style="font-size:14px;font-weight:700;max-width:80vw">大きく回しすぎると、スマホが自動で画面を縦にしてしまいます。<br>少し回すだけで曲がります（タイトル画面の「傾きテスト」で感度を変えられます）</div></div>
 <div id="tiltTest" class="overlay hidden"><div class="card">
   <div class="logo small">傾きテスト</div>
   <div id="ttStatus" style="font-weight:900;margin:8px 0"></div>
   <div class="ttMeter"><div class="bar"></div><div class="mid"></div><div class="knob" id="ttKnob"></div></div>
   <div id="ttVals" class="note"></div>
+  <div id="ttDiag" class="note" style="font-size:12px;opacity:.85"></div>
   <div class="btns">
     <select id="sensSel" class="courseSel">
+      <option value="xlow">感度：とても低い（ゆったり）</option>
       <option value="low">感度：低（大きく回す）</option>
       <option value="mid">感度：ふつう</option>
       <option value="high">感度：高（少し回すだけ）</option>
@@ -680,7 +682,7 @@
     <button class="btn gray small" id="ttCalib">今の持ち方を「まっすぐ」に</button>
     <button class="btn small" id="ttClose">とじる</button>
   </div>
-  <div class="note">横向きに持ち、ハンドルのように左右に回すと黄色い丸が動けばOKです。大きく回すとスマホが画面を縦にしてしまうので、少し回すだけで曲がる「感度：高」がおすすめです。</div>
+  <div class="note">横向きに持ち、ハンドルのように左右に回すと黄色い丸が動けばOKです。曲がりすぎるときは「感度：低」、回しすぎて画面が縦になるときは「感度：高」にしてください。</div>
 </div></div>
 
 <div id="pause" class="overlay hidden">
@@ -2544,9 +2546,9 @@ function showScr(id) {
   if (id === 'scrTop') renderTop();
 }
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, sec) {
   const el = $('toast'); el.textContent = msg; el.classList.add('show');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), (sec || 2.6) * 1000);
 }
 function updateNetBadge() {
   const el = $('netBadge'); if (!el) return;
@@ -4442,17 +4444,38 @@ padEl.querySelectorAll('[data-act]').forEach(b => {
 // ---- 傾きハンドル（横持ちでハンドルのように回す／前に倒すとアクセル） ----
 const ctrlPref = () => store.get('ctrl') || 'tilt';
 // 感度：何度回すとハンドルいっぱいか（小さいほど少し回すだけで曲がる。大きく回すと画面が縦に回ってしまうため）
-const SENS = { low: 26, mid: 16, high: 10 };
-const sensPref = () => store.get('tiltSens') || 'high';
-const TILT_DEAD = 1.5;
+const SENS = { xlow: 40, low: 30, mid: 20, high: 13 };
+const sensPref = () => store.get('tiltSens') || 'mid';
+const TILT_DEAD = 2.5;
+const TILT_EXPO = 1.7;   // 1より大きいほど、少しの傾きではゆるく曲がる（大きく回したときだけ鋭く曲がる）
 const tilt = { steer: 0, wheel: 0, wheel0: 0, pitch: 0, pitch0: null, last: 0, asked: false, denied: false, refAng: null, raw: {} };
 const screenAngle = () => ((screen.orientation && screen.orientation.angle) != null ? screen.orientation.angle : (window.orientation || 0));
+// 受信状況（傾きテストの診断表示用）
+const tiltDiag = { ori: 0, oriNull: 0, mot: 0, perm: '未確認', err: '', src: '' };
+let motSign = 0;   // 加速度センサーの符号（端末によって逆になるため、画面が上向きになる側に合わせる）
 function onOrientation(e) {
-  if (e.beta == null || e.gamma == null) return;
+  if (e.beta == null || e.gamma == null) { tiltDiag.oriNull++; return; }
+  tiltDiag.ori++;
   tilt.raw = { a: e.alpha, b: e.beta, g: e.gamma };
   const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
   // 端末から見た「下」の向き
-  const dx = Math.sin(g) * Math.cos(b), dy = -Math.sin(b), dz = -Math.cos(g) * Math.cos(b);
+  tilt.oriLast = performance.now(); tiltDiag.src = 'ori';
+  applyDown(Math.sin(g) * Math.cos(b), -Math.sin(b), -Math.cos(g) * Math.cos(b));
+}
+// 向きセンサーが届かない端末向け：加速度センサー（重力）から同じ計算をする
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null || a.y == null || a.z == null) return;
+  tiltDiag.mot++;
+  if (performance.now() - (tilt.oriLast || 0) < 600) return;   // 向きセンサーが動いていればそちらを使う
+  const m = Math.hypot(a.x, a.y, a.z);
+  if (m < 4) return;
+  if (!motSign && Math.abs(a.z) > 3) motSign = a.z > 0 ? -1 : 1;
+  const sg = motSign || -1;
+  tiltDiag.src = 'mot';
+  applyDown(sg * a.x / m, sg * a.y / m, sg * a.z / m);
+}
+function applyDown(dx, dy, dz) {
   // レース中は開始時の画面の向きで固定（傾けすぎて画面が縦に回っても、ハンドルの向きが変わらないように）
   const angDeg = racingNow() && tilt.refAng != null ? tilt.refAng : screenAngle();
   const ang = angDeg * Math.PI / 180;
@@ -4471,20 +4494,31 @@ function steerFromWheel(w) {
   w = angDelta(w, 0);
   const max = SENS[sensPref()] || 16;
   const mag = Math.max(0, Math.abs(w) - TILT_DEAD) / (max - TILT_DEAD);
-  return -Math.sign(w) * Math.min(1, mag);
+  return -Math.sign(w) * Math.pow(Math.min(1, mag), TILT_EXPO);
 }
 const racingNow = () => (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished' || state === 'countdown');
 window.addEventListener('deviceorientation', onOrientation);
+window.addEventListener('devicemotion', onMotion);
 // iPhone は「タップ（指を離したとき）」でないと許可の画面が出せない
+const permApi = () => {
+  const O = window.DeviceOrientationEvent, M = window.DeviceMotionEvent;
+  return { o: !!(O && typeof O.requestPermission === 'function'), m: !!(M && typeof M.requestPermission === 'function') };
+};
 async function askTilt(force) {
   if (!IS_TOUCH || (!force && (tilt.asked || ctrlPref() !== 'tilt'))) return;
-  if (!(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function')) { tilt.asked = true; return; }
+  const api = permApi();
+  if (!api.o && !api.m) { tilt.asked = true; if (tiltDiag.perm === '未確認') tiltDiag.perm = '不要'; return; }
   tilt.asked = true;
-  try {
-    const r = await DeviceOrientationEvent.requestPermission();
-    tilt.denied = r !== 'granted';
-    if (tilt.denied) toast('動きセンサーが許可されませんでした。設定アプリ→Safari→「モーションと画面の向きのアクセス」をONにしてください');
-  } catch (e) { tilt.asked = false; }
+  // 2つとも同じタップの中で呼ぶ（間に await を挟むと iPhone は許可画面を出さない）
+  const ps = [];
+  if (api.o) ps.push(DeviceOrientationEvent.requestPermission().catch(e => 'error:' + (e && e.message || e)));
+  if (api.m) ps.push(DeviceMotionEvent.requestPermission().catch(e => 'error:' + (e && e.message || e)));
+  const rs = await Promise.all(ps);
+  if (rs.includes('granted')) { tilt.denied = false; tiltDiag.perm = '許可済み'; tiltDiag.err = ''; return; }
+  const err = rs.find(r => String(r).startsWith('error:'));
+  if (err) { tilt.asked = false; tiltDiag.perm = 'エラー'; tiltDiag.err = String(err).slice(6); return; }
+  tilt.denied = true; tiltDiag.perm = '拒否';
+  toast('動きセンサーが「許可しない」になっています。Safariのこのタブを閉じて、もう一度ページを開くと確認が出ます', 6);
 }
 window.addEventListener('click', () => askTilt(false));
 window.addEventListener('touchend', () => askTilt(false));
@@ -4502,6 +4536,10 @@ let tiltMeter = null, noReverse = false;
 function updateTiltUI(show) {
   const on = show && tiltActive();
   document.body.classList.toggle('tiltMode', on);
+  if (show && !on && ctrlPref() === 'tilt' && state === 'race' && !tilt.warned) {
+    tilt.warned = true;
+    toast('傾きセンサーが使えないため、◀ ▶ ボタンで操作します（タイトル画面の「傾きテスト」で原因を確認できます）', 5);
+  }
   if (on && !tiltMeter) {
     tiltMeter = document.createElement('div'); tiltMeter.id = 'tiltMeter';
     tiltMeter.innerHTML = '<div class="bar"></div><div class="mid"></div><div class="knob"></div><div class="gas"></div>';
@@ -4523,17 +4561,38 @@ function openTiltTest() {
   $('sensSel').value = sensPref();
   setTimeout(() => { if (tilt.last) calibrateTilt(); }, 300);
 }
+const TILT_VER = '10/06c';
+function tiltEnv() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(ua);
+  const app = /Line\//.test(ua) ? 'LINE' : /Chatwork/i.test(ua) ? 'Chatwork' : /FBAN|FBAV/.test(ua) ? 'Facebook' : /Instagram/.test(ua) ? 'Instagram'
+    : /Slack/i.test(ua) ? 'Slack' : /Teams/i.test(ua) ? 'Teams' : (android && /; wv\)/.test(ua)) ? 'アプリ内ブラウザ' : '';
+  const br = app ? app + 'の中' : ios ? (/CriOS/.test(ua) ? 'Chrome' : /FxiOS/.test(ua) ? 'Firefox' : /EdgiOS/.test(ua) ? 'Edge' : 'Safari')
+    : /SamsungBrowser/.test(ua) ? 'Samsungブラウザ' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : '不明';
+  const home = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  return { ios, android, app, home, br: home ? 'ホーム画面から起動' : br, dev: ios ? 'iPhone/iPad' : android ? 'Android' : 'その他' };
+}
 function updateTiltTest() {
   if (!tiltTestOpen) return;
   const alive = performance.now() - tilt.last < 1000;
-  const needAsk = window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function';
-  $('ttStatus').innerHTML = tilt.denied ? '❌ センサーが許可されていません（下のボタン、またはiPhoneの設定から許可）'
-    : alive ? (window.innerWidth > window.innerHeight ? '✅ センサー動作中。ハンドルのように左右に回してみてください' : '📱 横向きに持ってください')
-    : needAsk ? '⚠️ センサーの値が届いていません。「センサーを許可」を押してください' : '⚠️ センサーの値が届いていません（この端末・ブラウザでは使えない可能性があります）';
-  $('ttAllow').classList.toggle('hidden', !needAsk);
+  const api = permApi(), needAsk = api.o || api.m, env = tiltEnv();
+  let msg;
+  if (alive) msg = window.innerWidth > window.innerHeight ? '✅ センサー動作中。ハンドルのように左右に回してみてください' : '📱 横向きに持ってください';
+  else if (!window.isSecureContext) msg = '⚠️ このページが https で開かれていません。GitHub Pages の「https://〜」のURLで開いてください';
+  else if (tilt.denied) msg = '❌ センサーが「許可しない」になっています。Safariのこのタブを閉じて、ページを開き直してから「センサーを許可」を押してください';
+  else if (env.app) msg = `⚠️ ${env.app}の中のブラウザで開いています。メニューから「Safariで開く」／「Chromeで開く」を選んでください`;
+  else if (tiltDiag.perm === '許可済み') msg = '⚠️ 許可は済んでいますが、センサーの値が届いていません。スマホを少し動かすか、ページを再読み込みしてください';
+  else if (needAsk) msg = '👇「センサーを許可」を押して、出てきた確認で「許可」を選んでください';
+  else if (env.android) msg = '⚠️ センサーの値が届いていません。Chromeの「︙」→「設定」→「サイトの設定」→「モーションセンサー」を「許可」にしてください';
+  else msg = '⚠️ センサーの値が届いていません（この端末・ブラウザでは使えない可能性があります）';
+  $('ttStatus').innerHTML = msg;
   $('ttKnob').style.left = (50 - tilt.steer * 50) + '%';
   const w = angDelta(tilt.wheel - tilt.wheel0, 0);
   $('ttVals').textContent = alive ? `回した角度 ${w.toFixed(0)}°（${SENS[sensPref()]}°でハンドルいっぱい）／ 前後 ${forwardTilt().toFixed(0)}° ／ 画面の向き ${screenAngle()}°` : '';
+  $('ttDiag').textContent = `診断(版 ${TILT_VER})：${env.dev}・${env.br}／https ${window.isSecureContext ? 'OK' : 'NG'}／許可の確認 ${needAsk ? 'あり' : 'なし'}・${tiltDiag.perm}`
+    + `／受信 向き${tiltDiag.ori}回・加速度${tiltDiag.mot}回${tiltDiag.oriNull ? '・空' + tiltDiag.oriNull + '回' : ''}`
+    + (tiltDiag.src ? `（${tiltDiag.src === 'ori' ? '向きセンサー' : '加速度センサー'}を使用中）` : '') + (tiltDiag.err ? `／${tiltDiag.err}` : '');
 }
 
 let padShown = false, padItemKey = '', portraitT = 0;
@@ -4581,7 +4640,11 @@ $('ctrlSel').value = ctrlPref();
 if (!IS_TOUCH) $('ctrlSel').classList.add('hidden');
 if (IS_TOUCH) $('tiltTestBtn').classList.remove('hidden');
 $('tiltTestBtn').addEventListener('click', () => { askTilt(true); openTiltTest(); });
-$('ttAllow').addEventListener('click', () => askTilt(true));
+$('ttAllow').addEventListener('click', () => {
+  const api = permApi();
+  if (!api.o && !api.m) toast(window.isSecureContext ? 'この端末・ブラウザは許可の操作が不要です（受信状況は「診断」の行を見てください）' : 'https のURLで開いてください', 5);
+  askTilt(true);
+});
 $('ttCalib').addEventListener('click', () => { calibrateTilt(); toast('今の持ち方を「まっすぐ」にしました'); });
 $('ttClose').addEventListener('click', () => { tiltTestOpen = false; $('tiltTest').classList.add('hidden'); });
 $('sensSel').addEventListener('change', e => store.set('tiltSens', e.target.value));
