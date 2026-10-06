@@ -45,6 +45,11 @@
   #rotateMsg { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.88); color: #fff; display: flex; flex-direction: column;
     align-items: center; justify-content: center; font-weight: 900; font-size: 22px; gap: 12px; text-align: center; }
   #rotateMsg .big { font-size: 64px; }
+  #tiltTest { z-index: 55; }
+  .ttMeter { position: relative; width: 260px; height: 40px; margin: 10px auto; background: #263238; border-radius: 20px; }
+  .ttMeter .bar { position: absolute; left: 16px; right: 16px; top: 17px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #4fc3f7, #fff 50%, #4fc3f7); }
+  .ttMeter .mid { position: absolute; left: 50%; top: 9px; width: 2px; height: 22px; background: #fff; }
+  .ttMeter .knob { position: absolute; top: 7px; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; background: #ffd54f; border: 3px solid #fff; left: 50%; }
 
   /* ===== スマホ用のレイアウト ===== */
   body.mobile .panel { padding: 3px 10px; border-width: 2px; border-radius: 10px; }
@@ -441,6 +446,7 @@
         <option value="button">ハンドル：ボタン</option>
       </select>
       <button class="btn gray small hidden" id="fsBtn">⛶ 全画面</button>
+      <button class="btn gray small hidden" id="tiltTestBtn">📱 傾きテスト</button>
     </div>
     <div class="btns">
       <button class="btn" id="startBtn">ひとりで走る（Enter）</button>
@@ -533,6 +539,7 @@
         <li>スマホは<b>横向き</b>で持ちます。<b>ハンドル：傾き</b>（初期設定）なら、スマホをハンドルのように左右に回すと曲がります。画面下のメーターで今の傾きが分かります</li>
         <li>右下で <b>ブレーキ</b>、その上の丸いボタンで <b>アイテム</b>。自動アクセルOFFにすると、<b>前に倒してアクセル・手前に倒してブレーキ</b></li>
         <li>レース開始時の持ち方が「まっすぐ」の基準になります。ずれたら画面左の「傾き補正」。iPhoneでは最初に「動きと画面の向き」の許可を求められるので「許可」を押してください</li>
+        <li>曲がらないときは、タイトル画面の「📱 傾きテスト」で、センサーが動いているか確認できます。大きく回すとスマホが画面を縦にしてしまうので、少し回すだけで曲がる「感度：高」がおすすめです</li>
         <li>傾きが苦手な人は、タイトル画面で <b>ハンドル：ボタン</b> にすると ◀ ▶ ボタンで操作できます</li>
         <li>最初は <b>自動アクセル</b>（押さなくても進む）。画面左の「自動アクセル」を押すと、アクセルボタンで自分で踏むモードに切り替わります</li>
         <li>Androidはタイトル画面の「全画面」で広く使えます。iPhoneは「ホーム画面に追加」から開くと広く使えます</li>
@@ -657,7 +664,24 @@
   </div>
 </div>
 <div id="tiltMeterWrap"></div>
-<div id="rotateMsg" class="hidden"><div class="big">📱↻</div>スマホを横向きにしてください</div>
+<div id="rotateMsg" class="hidden"><div class="big">📱↻</div>画面が縦になりました。横向きに戻してください<div style="font-size:14px;font-weight:700;max-width:80vw">大きく回しすぎると、スマホが自動で画面を縦にしてしまいます。<br>少し回すだけで曲がります（タイトル画面の「傾きテスト」で感度を上げられます）</div></div>
+<div id="tiltTest" class="overlay hidden"><div class="card">
+  <div class="logo small">傾きテスト</div>
+  <div id="ttStatus" style="font-weight:900;margin:8px 0"></div>
+  <div class="ttMeter"><div class="bar"></div><div class="mid"></div><div class="knob" id="ttKnob"></div></div>
+  <div id="ttVals" class="note"></div>
+  <div class="btns">
+    <select id="sensSel" class="courseSel">
+      <option value="low">感度：低（大きく回す）</option>
+      <option value="mid">感度：ふつう</option>
+      <option value="high">感度：高（少し回すだけ）</option>
+    </select>
+    <button class="btn blue small" id="ttAllow">センサーを許可</button>
+    <button class="btn gray small" id="ttCalib">今の持ち方を「まっすぐ」に</button>
+    <button class="btn small" id="ttClose">とじる</button>
+  </div>
+  <div class="note">横向きに持ち、ハンドルのように左右に回すと黄色い丸が動けばOKです。大きく回すとスマホが画面を縦にしてしまうので、少し回すだけで曲がる「感度：高」がおすすめです。</div>
+</div></div>
 
 <div id="pause" class="overlay hidden">
   <div class="card">
@@ -4412,42 +4436,58 @@ padEl.querySelectorAll('[data-act]').forEach(b => {
     else if (a === 'auto') setAutoGas(!autoGas);
     else if (a === 'pause') togglePause();
     else if (a === 'mute') setMuted(!muted);
-    else if (a === 'calib') { tilt.pitch0 = tilt.pitch; toast('今の持ち方をまっすぐ・基準にしました'); }
+    else if (a === 'calib') { calibrateTilt(); toast('今の持ち方を「まっすぐ」にしました'); }
   });
 });
 // ---- 傾きハンドル（横持ちでハンドルのように回す／前に倒すとアクセル） ----
 const ctrlPref = () => store.get('ctrl') || 'tilt';
-const tilt = { steer: 0, pitch: 0, pitch0: null, last: 0, asked: false, denied: false };
-const TILT_MAX = 28, TILT_DEAD = 3;            // 何度傾けるとハンドルいっぱいか／遊び
+// 感度：何度回すとハンドルいっぱいか（小さいほど少し回すだけで曲がる。大きく回すと画面が縦に回ってしまうため）
+const SENS = { low: 26, mid: 16, high: 10 };
+const sensPref = () => store.get('tiltSens') || 'high';
+const TILT_DEAD = 1.5;
+const tilt = { steer: 0, wheel: 0, wheel0: 0, pitch: 0, pitch0: null, last: 0, asked: false, denied: false, refAng: null, raw: {} };
+const screenAngle = () => ((screen.orientation && screen.orientation.angle) != null ? screen.orientation.angle : (window.orientation || 0));
 function onOrientation(e) {
   if (e.beta == null || e.gamma == null) return;
+  tilt.raw = { a: e.alpha, b: e.beta, g: e.gamma };
   const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
   // 端末から見た「下」の向き
   const dx = Math.sin(g) * Math.cos(b), dy = -Math.sin(b), dz = -Math.cos(g) * Math.cos(b);
-  const ang = ((screen.orientation && screen.orientation.angle) != null ? screen.orientation.angle : (window.orientation || 0)) * Math.PI / 180;
+  // レース中は開始時の画面の向きで固定（傾けすぎて画面が縦に回っても、ハンドルの向きが変わらないように）
+  const angDeg = racingNow() && tilt.refAng != null ? tilt.refAng : screenAngle();
+  const ang = angDeg * Math.PI / 180;
   const sx = dx * Math.cos(ang) - dy * Math.sin(ang), sy = dx * Math.sin(ang) + dy * Math.cos(ang);
-  let wheel = Math.atan2(sx, -sy) * 180 / Math.PI;                    // ハンドルの回転角（右に回すとプラス）
+  const wheel = Math.atan2(sx, -sy) * 180 / Math.PI;                  // ハンドルの回転角（右に回すとプラス）
   const pitch = Math.atan2(dz, Math.hypot(sx, sy)) * 180 / Math.PI;   // 手前・奥への傾き
-  const mag = Math.max(0, Math.abs(wheel) - TILT_DEAD) / (TILT_MAX - TILT_DEAD);
-  const target = -Math.sign(wheel) * Math.min(1, mag);
-  if (!tilt.last) { tilt.steer = target; tilt.pitch = pitch; }      // 最初の1回はそのまま使う
-  tilt.steer += (target - tilt.steer) * 0.5;
+  if (!tilt.last) { tilt.wheel = wheel; tilt.pitch = pitch; }
+  tilt.wheel += angDelta(wheel, tilt.wheel) * 0.55;
   tilt.pitch += (pitch - tilt.pitch) * 0.3;
   if (tilt.pitch0 == null) tilt.pitch0 = tilt.pitch;
+  tilt.steer = steerFromWheel(tilt.wheel - tilt.wheel0);
   tilt.last = performance.now();
 }
+function angDelta(a, b) { let d = a - b; while (d > 180) d -= 360; while (d < -180) d += 360; return d; }
+function steerFromWheel(w) {
+  w = angDelta(w, 0);
+  const max = SENS[sensPref()] || 16;
+  const mag = Math.max(0, Math.abs(w) - TILT_DEAD) / (max - TILT_DEAD);
+  return -Math.sign(w) * Math.min(1, mag);
+}
+const racingNow = () => (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished' || state === 'countdown');
 window.addEventListener('deviceorientation', onOrientation);
-async function askTilt() {             // iPhone は画面を触ったときに許可を求める必要がある
-  if (tilt.asked || ctrlPref() !== 'tilt' || !IS_TOUCH) return;
+// iPhone は「タップ（指を離したとき）」でないと許可の画面が出せない
+async function askTilt(force) {
+  if (!IS_TOUCH || (!force && (tilt.asked || ctrlPref() !== 'tilt'))) return;
+  if (!(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function')) { tilt.asked = true; return; }
   tilt.asked = true;
   try {
-    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      const r = await DeviceOrientationEvent.requestPermission();
-      if (r !== 'granted') { tilt.denied = true; toast('動きセンサーが許可されなかったため、ボタン操作にします'); }
-    }
+    const r = await DeviceOrientationEvent.requestPermission();
+    tilt.denied = r !== 'granted';
+    if (tilt.denied) toast('動きセンサーが許可されませんでした。設定アプリ→Safari→「モーションと画面の向きのアクセス」をONにしてください');
   } catch (e) { tilt.asked = false; }
 }
-window.addEventListener('pointerdown', askTilt);
+window.addEventListener('click', () => askTilt(false));
+window.addEventListener('touchend', () => askTilt(false));
 const tiltActive = () => touchOn() && ctrlPref() === 'tilt' && !tilt.denied && performance.now() - tilt.last < 1000;
 function steerInput() {
   if (tiltActive() && player.kind === 'local') {
@@ -4457,6 +4497,7 @@ function steerInput() {
   return (keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0);
 }
 const forwardTilt = () => tilt.pitch0 == null ? 0 : tilt.pitch0 - tilt.pitch;   // ＋＝前に倒した
+function calibrateTilt() { tilt.wheel0 = tilt.wheel; tilt.pitch0 = tilt.pitch; tilt.refAng = screenAngle(); }
 let tiltMeter = null, noReverse = false;
 function updateTiltUI(show) {
   const on = show && tiltActive();
@@ -4470,20 +4511,41 @@ function updateTiltUI(show) {
   $('padCalib').style.display = on ? '' : 'none';
   if (!on) return;
   // スタート直前（カウントダウン中）の持ち方を「まっすぐ」の基準にする
-  if (state === 'countdown') tilt.pitch0 = tilt.pitch;
+  if (state === 'countdown' && window.innerWidth > window.innerHeight) calibrateTilt();
   tiltMeter.querySelector('.knob').style.left = (50 - tilt.steer * 50) + '%';
   const f = forwardTilt();
   tiltMeter.querySelector('.gas').textContent = autoGas ? '' : f > 10 ? 'アクセル' : f < -12 ? 'ブレーキ' : '';
 }
+// ---- 傾きテスト画面 ----
+let tiltTestOpen = false;
+function openTiltTest() {
+  tiltTestOpen = true; $('tiltTest').classList.remove('hidden');
+  $('sensSel').value = sensPref();
+  setTimeout(() => { if (tilt.last) calibrateTilt(); }, 300);
+}
+function updateTiltTest() {
+  if (!tiltTestOpen) return;
+  const alive = performance.now() - tilt.last < 1000;
+  const needAsk = window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function';
+  $('ttStatus').innerHTML = tilt.denied ? '❌ センサーが許可されていません（下のボタン、またはiPhoneの設定から許可）'
+    : alive ? (window.innerWidth > window.innerHeight ? '✅ センサー動作中。ハンドルのように左右に回してみてください' : '📱 横向きに持ってください')
+    : needAsk ? '⚠️ センサーの値が届いていません。「センサーを許可」を押してください' : '⚠️ センサーの値が届いていません（この端末・ブラウザでは使えない可能性があります）';
+  $('ttAllow').classList.toggle('hidden', !needAsk);
+  $('ttKnob').style.left = (50 - tilt.steer * 50) + '%';
+  const w = angDelta(tilt.wheel - tilt.wheel0, 0);
+  $('ttVals').textContent = alive ? `回した角度 ${w.toFixed(0)}°（${SENS[sensPref()]}°でハンドルいっぱい）／ 前後 ${forwardTilt().toFixed(0)}° ／ 画面の向き ${screenAngle()}°` : '';
+}
 
-let padShown = false, padItemKey = '';
+let padShown = false, padItemKey = '', portraitT = 0;
 function updateTouchPad() {
   const show = touchOn() && (mode === 'solo' || mode === 'net') && (state === 'countdown' || state === 'race' || state === 'finished');
   if (show !== padShown) {
     padShown = show; padEl.classList.toggle('hidden', !show);
     if (!show) { ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].forEach(k => { if (touchKeys[k]) { touchKeys[k] = false; keys[k] = false; } }); padEl.querySelectorAll('.on').forEach(x => x.classList.remove('on')); }
   }
-  $('rotateMsg').classList.toggle('hidden', !(show && IS_MOBILE && window.innerHeight > window.innerWidth));
+  const portrait = show && IS_MOBILE && window.innerHeight > window.innerWidth;
+  if (portrait) portraitT += 1 / 60; else portraitT = 0;
+  $('rotateMsg').classList.toggle('hidden', portraitT < 1.2);
   if (!show) { updateTiltUI(false); noReverse = false; return; }
   // 自動アクセル：ブレーキを押していない間はアクセル
   updateTiltUI(show);
@@ -4517,6 +4579,12 @@ $('qualitySel').addEventListener('change', e => {
 $('touchSel').value = touchPref();
 $('ctrlSel').value = ctrlPref();
 if (!IS_TOUCH) $('ctrlSel').classList.add('hidden');
+if (IS_TOUCH) $('tiltTestBtn').classList.remove('hidden');
+$('tiltTestBtn').addEventListener('click', () => { askTilt(true); openTiltTest(); });
+$('ttAllow').addEventListener('click', () => askTilt(true));
+$('ttCalib').addEventListener('click', () => { calibrateTilt(); toast('今の持ち方を「まっすぐ」にしました'); });
+$('ttClose').addEventListener('click', () => { tiltTestOpen = false; $('tiltTest').classList.add('hidden'); });
+$('sensSel').addEventListener('change', e => store.set('tiltSens', e.target.value));
 $('ctrlSel').addEventListener('change', e => {
   store.set('ctrl', e.target.value);
   tilt.asked = false; tilt.denied = false;
@@ -4606,6 +4674,7 @@ function update(dt) {
   soundPolicyTick();
   updatePreRace();
   updateTouchPad();
+  updateTiltTest();
   updateBonusHud();
   const me = (mode === 'solo' || mode === 'net') && (state === 'race' || state === 'finished') ? player : null;
   drawSpeedLines(me && isBonus() ? Math.min(1.8, Math.max(0, (me.speed - 45) / 100)) : me ? Math.max(0, (me.speed / me.maxSpeed - 0.8) * 4) * (isBonus() ? 1.4 : 0.8) + (me.boost > 0 ? 0.6 : 0) + (me.airborne ? 0.3 : 0) : 0);
